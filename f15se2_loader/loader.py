@@ -6,6 +6,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
+try:
+    import pygame  # type: ignore
+except Exception:  # pragma: no cover - optional dependency
+    pygame = None
+
 
 PathLike = Union[str, Path]
 
@@ -337,7 +342,58 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model", help="Path to a .3D3 file")
     parser.add_argument("--terrain", help="Path to a .3DT file")
     parser.add_argument("--grid", help="Path to a .3DG file")
+    parser.add_argument("--show", action="store_true", help="Open a simple viewer window")
     return parser
+
+
+def _render_grid_surface(grid: ThreeDGGrid, width: int = 320, height: int = 240) -> Optional[object]:
+    if pygame is None:
+        return None
+
+    pygame.init()
+    surface = pygame.display.set_mode((width, height))
+    pygame.display.set_caption("F-15 SE2 grid preview")
+    surface.fill((0, 0, 0))
+
+    cell_w = max(1, width // 16)
+    cell_h = max(1, height // 16)
+    for index, value in enumerate(grid.layer2[: 16 * 16]):
+        x = (index % 16) * cell_w
+        y = (index // 16) * cell_h
+        color = (value, value // 2, value // 3)
+        pygame.draw.rect(surface, color, (x, y, cell_w, cell_h))
+
+    pygame.display.flip()
+    return surface
+
+
+def show_viewer(model_path: Optional[PathLike], terrain_path: Optional[PathLike], grid_path: Optional[PathLike]) -> None:
+    if pygame is None:
+        print("pygame is not installed; falling back to text output")
+        return
+
+    model = load_3d3(model_path) if model_path else None
+    terrain = load_3dt(terrain_path) if terrain_path else None
+    grid = load_3dg(grid_path) if grid_path else None
+
+    if model is not None:
+        print(model.describe())
+    if terrain is not None:
+        print(terrain.describe())
+    if grid is not None:
+        print(grid.describe())
+
+    if grid is not None:
+        _render_grid_surface(grid)
+        running = True
+        while running:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    running = False
+
+        pygame.quit()
 
 
 def main() -> None:
@@ -351,7 +407,10 @@ def main() -> None:
     if args.grid:
         print(load_3dg(args.grid).describe())
 
-    if not any([args.model, args.terrain, args.grid]):
+    if args.show:
+        show_viewer(args.model, args.terrain, args.grid)
+
+    if not any([args.model, args.terrain, args.grid, args.show]):
         parser.print_help()
 
 
