@@ -85,5 +85,29 @@ class LoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Too much tile data"):
                 load_3dt(path)
 
+    def test_load_3d3_with_oversized_header_count(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "demo.3D3"
+            payload = bytearray()
+            payload.extend(struct.pack("<H", 0x3333))
+            payload.extend(struct.pack("<H", 0x0065))
+            path.write_bytes(payload)
 
-if __name__ == "__main__":    unittest.main()
+            with self.assertRaisesRegex(ValueError, "3D3 header count"):
+                load_3d3(path)
+
+    def test_load_3d3_with_oversized_object_size(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "demo.3D3"
+            payload = bytearray()
+            payload.extend(struct.pack("<H", 0x3333))
+            payload.extend(struct.pack("<H", 0))
+            payload.extend(struct.pack("<H", 0xADD5))
+            path.write_bytes(payload)
+
+            with self.assertRaisesRegex(ValueError, "3D3 object size"):
+                load_3d3(path)
+
+
+if __name__ == "__main__":
+    unittest.main()

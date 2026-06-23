@@ -17,6 +17,13 @@ PathLike = Union[str, Path]
 MAX_TILE_DATA = 4000
 TILE_OBJECT_SIZE = 7
 
+MAX_3D3_HEADER_WORDS = 100
+MAX_3D3_OBJECT_BYTES = 0xADD4
+MAX_3D3_EXTRA_SECTION_BYTES = 0x96
+MAX_3D3_VERTEX_X_WORDS = 0x20
+MAX_3D3_VERTEX_Y_WORDS = 0x20
+MAX_3D3_VERTEX_Z_WORDS = 0x08
+
 
 @dataclass
 class TileEntry:
@@ -188,6 +195,8 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
 
     offset = 2
     header_count = _read_u16(data, offset)
+    if header_count > MAX_3D3_HEADER_WORDS:
+        raise ValueError(f"3D3 header count {header_count} exceeds {MAX_3D3_HEADER_WORDS}")
     offset += 2
     header_words = [
         _read_u16(data, offset + index * 2)
@@ -196,6 +205,8 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
     offset += header_count * 2
 
     object_size = _read_u16(data, offset)
+    if object_size > MAX_3D3_OBJECT_BYTES:
+        raise ValueError(f"3D3 object size {object_size} exceeds {MAX_3D3_OBJECT_BYTES}")
     offset += 2
     object_data = _read_bytes(data, offset, object_size, name="object data")
     offset += object_size
@@ -210,6 +221,10 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
     vertex_y: list[int] = []
     vertex_z: list[int] = []
     if extra_section_count != 0:
+        if extra_section_count > MAX_3D3_EXTRA_SECTION_BYTES:
+            raise ValueError(
+                f"3D3 extra section size {extra_section_count} exceeds {MAX_3D3_EXTRA_SECTION_BYTES}"
+            )
         extra_bytes_a = _read_bytes(data, offset, extra_section_count, name="extra A")
         offset += extra_section_count
         extra_bytes_b = _read_bytes(data, offset, extra_section_count, name="extra B")
@@ -218,6 +233,10 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
         offset += extra_section_count
 
         vertex_x_count = _read_u8(data, offset)
+        if vertex_x_count > MAX_3D3_VERTEX_X_WORDS:
+            raise ValueError(
+                f"3D3 vertex X count {vertex_x_count} exceeds {MAX_3D3_VERTEX_X_WORDS}"
+            )
         offset += 1
         if vertex_x_count != 0:
             vertex_x = [
@@ -227,6 +246,10 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
             offset += vertex_x_count * 2
 
         vertex_y_count = _read_u8(data, offset)
+        if vertex_y_count > MAX_3D3_VERTEX_Y_WORDS:
+            raise ValueError(
+                f"3D3 vertex Y count {vertex_y_count} exceeds {MAX_3D3_VERTEX_Y_WORDS}"
+            )
         offset += 1
         if vertex_y_count != 0:
             vertex_y = [
@@ -236,6 +259,10 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
             offset += vertex_y_count * 2
 
         vertex_z_count = _read_u8(data, offset)
+        if vertex_z_count > MAX_3D3_VERTEX_Z_WORDS:
+            raise ValueError(
+                f"3D3 vertex Z count {vertex_z_count} exceeds {MAX_3D3_VERTEX_Z_WORDS}"
+            )
         offset += 1
         if vertex_z_count != 0:
             vertex_z = [
