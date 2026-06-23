@@ -14,9 +14,6 @@ except Exception:  # pragma: no cover - optional dependency
 
 PathLike = Union[str, Path]
 
-MAX_TILE_DATA = 4000
-TILE_OBJECT_SIZE = 7
-
 
 @dataclass
 class TileEntry:
@@ -273,7 +270,6 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
 
     categories: list[list[TerrainTile]] = []
     tile_counts: list[list[int]] = []
-    byte_offset = 0
     for category_size in category_sizes:
         if category_size > 0x20:
             raise ValueError(f"Category size {category_size} exceeds 0x20")
@@ -284,9 +280,6 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
 
         tiles: list[TerrainTile] = []
         for object_count in counts:
-            if byte_offset + object_count * TILE_OBJECT_SIZE > MAX_TILE_DATA:
-                raise ValueError("Too much tile data")
-
             objects: list[TileEntry] = []
             for _ in range(object_count):
                 x = _read_i16(data, offset)
@@ -298,7 +291,6 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
                 shape = _read_u16(data, offset)
                 offset += 2
                 objects.append(TileEntry(x=x, y=y, z=z, shape=shape & 0xFF))
-                byte_offset += TILE_OBJECT_SIZE
             tiles.append(TerrainTile(object_count=object_count, objects=objects))
         categories.append(tiles)
 
