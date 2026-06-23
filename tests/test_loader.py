@@ -1,4 +1,3 @@
-import os
 import struct
 import tempfile
 import unittest
@@ -61,23 +60,18 @@ class LoaderTests(unittest.TestCase):
             self.assertEqual(len(grid.layer2), 0x200)
             self.assertEqual(grid.render_preview(2, 2), "43 43\n43 43")
 
-    def test_load_3dt_with_windows_style_relative_path(self) -> None:
+    def test_load_3dt_with_truncated_object_data(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            old_cwd = os.getcwd()
-            os.chdir(tmpdir)
-            self.addCleanup(os.chdir, old_cwd)
-
+            path = Path(tmpdir) / "demo.3DT"
             payload = bytearray()
             payload.extend(struct.pack("<H", 0x3131))
             payload.extend(struct.pack("<HHHHH", 1, 0, 0, 0, 0))
             payload.extend(struct.pack("<H", 1))
-            payload.extend(struct.pack("<hhhh", 1, 2, 3, 4))
-            path = Path(tmpdir) / "demo.3DT"
+            payload.extend(struct.pack("<h", 1))
             path.write_bytes(payload)
 
-            terrain = load_3dt(".\\demo.3DT")
-            self.assertEqual(terrain.signature, 0x3131)
-            self.assertEqual(terrain.categories[0][0].objects[0].shape, 4)
+            with self.assertRaisesRegex(ValueError, "Unexpected end of file while reading i16"):
+                load_3dt(path)
 
 
 if __name__ == "__main__":

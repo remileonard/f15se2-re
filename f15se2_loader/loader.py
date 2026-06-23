@@ -15,13 +15,6 @@ except Exception:  # pragma: no cover - optional dependency
 PathLike = Union[str, Path]
 
 
-def _normalize_path(path: PathLike) -> Path:
-    path_str = str(path)
-    if "\\" in path_str:
-        path_str = path_str.replace("\\", "/")
-    return Path(path_str)
-
-
 @dataclass
 class TileEntry:
     x: int
@@ -173,15 +166,15 @@ def _read_u8(data: bytes, offset: int) -> int:
 
 
 def _read_u16(data: bytes, offset: int) -> int:
-    return struct.unpack_from("<H", data, offset)[0]
+    return int.from_bytes(_read_bytes(data, offset, 2, name="u16"), "little")
 
 
 def _read_i16(data: bytes, offset: int) -> int:
-    return struct.unpack_from("<h", data, offset)[0]
+    return int.from_bytes(_read_bytes(data, offset, 2, name="i16"), "little", signed=True)
 
 
 def load_3d3(path: PathLike) -> ThreeD3Model:
-    path = _normalize_path(path)
+    path = Path(path)
     data = path.read_bytes()
     if len(data) < 2:
         raise ValueError("3D3 file is empty")
@@ -262,7 +255,7 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
 
 
 def load_3dt(path: PathLike) -> ThreeDTerrain:
-    path = _normalize_path(path)
+    path = Path(path)
     data = path.read_bytes()
     if len(data) < 2:
         raise ValueError("3DT file is empty")
@@ -311,7 +304,7 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
 
 
 def load_3dg(path: PathLike) -> ThreeDGGrid:
-    path = _normalize_path(path)
+    path = Path(path)
     data = path.read_bytes()
     if len(data) < 2:
         raise ValueError("3DG file is empty")
