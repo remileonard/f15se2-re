@@ -284,11 +284,14 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
 
         tiles: list[TerrainTile] = []
         for object_count in counts:
-            if byte_offset + object_count * TILE_OBJECT_SIZE > MAX_TILE_DATA:
+            if object_count * TILE_OBJECT_SIZE > MAX_TILE_DATA - byte_offset:
                 raise ValueError("Too much tile data")
 
             objects: list[TileEntry] = []
             for _ in range(object_count):
+                if byte_offset + TILE_OBJECT_SIZE > MAX_TILE_DATA:
+                    raise ValueError("Too much tile data")
+
                 x = _read_i16(data, offset)
                 offset += 2
                 y = _read_i16(data, offset)
