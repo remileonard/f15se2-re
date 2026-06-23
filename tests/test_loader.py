@@ -31,8 +31,8 @@ class LoaderTests(unittest.TestCase):
             payload.extend(struct.pack("<H", 0x3131))
             payload.extend(struct.pack("<HHHHH", 1, 0, 0, 0, 0))
             payload.extend(struct.pack("<H", 2))
-            payload.extend(struct.pack("<hhhB", 1, 2, 3, 4))
-            payload.extend(struct.pack("<hhhB", 5, 6, 7, 8))
+            payload.extend(struct.pack("<hhhH", 1, 2, 3, 4))
+            payload.extend(struct.pack("<hhhH", 5, 6, 7, 8))
             path.write_bytes(payload)
 
             terrain = load_3dt(path)
