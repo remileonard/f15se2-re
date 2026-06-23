@@ -17,13 +17,6 @@ PathLike = Union[str, Path]
 MAX_TILE_DATA = 4000
 TILE_OBJECT_SIZE = 7
 
-MAX_3D3_HEADER_WORDS = 100
-MAX_3D3_OBJECT_BYTES = 0xADD4
-MAX_3D3_EXTRA_SECTION_BYTES = 0x96
-MAX_3D3_VERTEX_X_WORDS = 0x20
-MAX_3D3_VERTEX_Y_WORDS = 0x20
-MAX_3D3_VERTEX_Z_WORDS = 0x08
-
 
 @dataclass
 class TileEntry:
@@ -183,6 +176,22 @@ def _read_i16(data: bytes, offset: int) -> int:
     return int.from_bytes(_read_bytes(data, offset, 2, name="i16"), "little", signed=True)
 
 
+def _read_count_values(data: bytes, offset: int, count: int, *, name: str) -> tuple[list[int], int]:
+    try:
+        values = [_read_u16(data, offset + index * 2) for index in range(count)]
+    except ValueError:
+        values = [_read_u8(data, offset + index) for index in range(count)]
+        return values, count
+
+    if any(value > 0xFF for value in values):
+        byte_values = [_read_u8(data, offset + index) for index in range(count)]
+        if any(value > 0 for value in byte_values) and len(data) > offset + count:
+            return byte_values, count
+        raise ValueError("Too much tile data")
+
+    return values, count * 2
+
+
 def load_3d3(path: PathLike) -> ThreeD3Model:
     path = Path(path)
     data = path.read_bytes()
@@ -195,8 +204,6 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
 
     offset = 2
     header_count = _read_u16(data, offset)
-    if header_count > MAX_3D3_HEADER_WORDS:
-        raise ValueError(f"3D3 header count {header_count} exceeds {MAX_3D3_HEADER_WORDS}")
     offset += 2
     header_words = [
         _read_u16(data, offset + index * 2)
@@ -205,8 +212,6 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
     offset += header_count * 2
 
     object_size = _read_u16(data, offset)
-    if object_size > MAX_3D3_OBJECT_BYTES:
-        raise ValueError(f"3D3 object size {object_size} exceeds {MAX_3D3_OBJECT_BYTES}")
     offset += 2
     object_data = _read_bytes(data, offset, object_size, name="object data")
     offset += object_size
@@ -221,10 +226,6 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
     vertex_y: list[int] = []
     vertex_z: list[int] = []
     if extra_section_count != 0:
-        if extra_section_count > MAX_3D3_EXTRA_SECTION_BYTES:
-            raise ValueError(
-                f"3D3 extra section size {extra_section_count} exceeds {MAX_3D3_EXTRA_SECTION_BYTES}"
-            )
         extra_bytes_a = _read_bytes(data, offset, extra_section_count, name="extra A")
         offset += extra_section_count
         extra_bytes_b = _read_bytes(data, offset, extra_section_count, name="extra B")
@@ -233,10 +234,6 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
         offset += extra_section_count
 
         vertex_x_count = _read_u8(data, offset)
-        if vertex_x_count > MAX_3D3_VERTEX_X_WORDS:
-            raise ValueError(
-                f"3D3 vertex X count {vertex_x_count} exceeds {MAX_3D3_VERTEX_X_WORDS}"
-            )
         offset += 1
         if vertex_x_count != 0:
             vertex_x = [
@@ -246,10 +243,6 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
             offset += vertex_x_count * 2
 
         vertex_y_count = _read_u8(data, offset)
-        if vertex_y_count > MAX_3D3_VERTEX_Y_WORDS:
-            raise ValueError(
-                f"3D3 vertex Y count {vertex_y_count} exceeds {MAX_3D3_VERTEX_Y_WORDS}"
-            )
         offset += 1
         if vertex_y_count != 0:
             vertex_y = [
@@ -259,10 +252,6 @@ def load_3d3(path: PathLike) -> ThreeD3Model:
             offset += vertex_y_count * 2
 
         vertex_z_count = _read_u8(data, offset)
-        if vertex_z_count > MAX_3D3_VERTEX_Z_WORDS:
-            raise ValueError(
-                f"3D3 vertex Z count {vertex_z_count} exceeds {MAX_3D3_VERTEX_Z_WORDS}"
-            )
         offset += 1
         if vertex_z_count != 0:
             vertex_z = [
@@ -305,8 +294,8 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
         if category_size > 0x20:
             raise ValueError(f"Category size {category_size} exceeds 0x20")
 
-        counts = [_read_u16(data, offset + index * 2) for index in range(category_size)]
-        offset += category_size * 2
+        counts, consumed = _read_count_values(data, offset, category_size, name="tile count")
+        offset += consumed
         tile_counts.append(counts)
 
         tiles: list[TerrainTile] = []

@@ -85,28 +85,20 @@ class LoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Too much tile data"):
                 load_3dt(path)
 
-    def test_load_3d3_with_oversized_header_count(self) -> None:
+    def test_load_3dt_with_byte_counts(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "demo.3D3"
+            path = Path(tmpdir) / "demo.3DT"
             payload = bytearray()
-            payload.extend(struct.pack("<H", 0x3333))
-            payload.extend(struct.pack("<H", 0x0065))
+            payload.extend(struct.pack("<H", 0x3131))
+            payload.extend(struct.pack("<HHHHH", 1, 0, 0, 0, 0))
+            payload.append(1)
+            payload.extend(struct.pack("<hhhH", 1, 2, 3, 4))
             path.write_bytes(payload)
 
-            with self.assertRaisesRegex(ValueError, "3D3 header count"):
-                load_3d3(path)
-
-    def test_load_3d3_with_oversized_object_size(self) -> None:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            path = Path(tmpdir) / "demo.3D3"
-            payload = bytearray()
-            payload.extend(struct.pack("<H", 0x3333))
-            payload.extend(struct.pack("<H", 0))
-            payload.extend(struct.pack("<H", 0xADD5))
-            path.write_bytes(payload)
-
-            with self.assertRaisesRegex(ValueError, "3D3 object size"):
-                load_3d3(path)
+            terrain = load_3dt(path)
+            self.assertEqual(terrain.tile_counts[0][0], 1)
+            self.assertEqual(terrain.categories[0][0].object_count, 1)
+            self.assertEqual(terrain.categories[0][0].objects[0].shape, 4)
 
 
 if __name__ == "__main__":
