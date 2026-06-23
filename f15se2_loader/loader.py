@@ -288,8 +288,8 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
                 offset += 2
                 z = _read_i16(data, offset)
                 offset += 2
-                shape = _read_u16(data, offset)
-                offset += 2
+                shape = _read_u8(data, offset)
+                offset += 1
                 objects.append(TileEntry(x=x, y=y, z=z, shape=shape))
             tiles.append(TerrainTile(object_count=object_count, objects=objects))
         categories.append(tiles)
