@@ -73,6 +73,18 @@ class LoaderTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "Unexpected end of file while reading i16"):
                 load_3dt(path)
 
+    def test_load_3dt_with_oversized_object_count(self) -> None:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            path = Path(tmpdir) / "demo.3DT"
+            payload = bytearray()
+            payload.extend(struct.pack("<H", 0x3131))
+            payload.extend(struct.pack("<HHHHH", 1, 0, 0, 0, 0))
+            payload.extend(struct.pack("<H", 0xFE00))
+            path.write_bytes(payload)
+
+            with self.assertRaisesRegex(ValueError, "Too much tile data"):
+                load_3dt(path)
+
 
 if __name__ == "__main__":
     unittest.main()
