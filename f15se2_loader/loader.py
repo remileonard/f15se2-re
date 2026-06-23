@@ -34,6 +34,7 @@ class ThreeDTerrain:
     path: Path
     signature: int
     category_sizes: list[int] = field(default_factory=list)
+    tile_counts: list[list[int]] = field(default_factory=list)
     categories: list[list[TerrainTile]] = field(default_factory=list)
 
     def summary(self) -> dict[str, object]:
@@ -43,6 +44,7 @@ class ThreeDTerrain:
             "path": str(self.path),
             "signature": self.signature,
             "category_sizes": self.category_sizes,
+            "tile_counts": self.tile_counts,
             "category_count": len(self.categories),
             "tile_count": tile_count,
             "object_count": object_count,
@@ -267,14 +269,17 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
     offset += 10
 
     categories: list[list[TerrainTile]] = []
+    tile_counts: list[list[int]] = []
     for category_size in category_sizes:
         if category_size > 0x20:
             raise ValueError(f"Category size {category_size} exceeds 0x20")
 
+        counts = [_read_u16(data, offset + index * 2) for index in range(category_size)]
+        offset += category_size * 2
+        tile_counts.append(counts)
+
         tiles: list[TerrainTile] = []
-        for _ in range(category_size):
-            object_count = _read_u16(data, offset)
-            offset += 2
+        for object_count in counts:
             objects: list[TileEntry] = []
             for _ in range(object_count):
                 x = _read_i16(data, offset)
@@ -293,6 +298,7 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
         path=path,
         signature=signature,
         category_sizes=category_sizes,
+        tile_counts=tile_counts,
         categories=categories,
     )
 
