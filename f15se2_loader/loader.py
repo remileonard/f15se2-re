@@ -647,7 +647,7 @@ def _show_world_viewer(
         return
 
     pygame.init()
-    W, H = 800, 600
+    W, H = 1024, 768
     surface = pygame.display.set_mode((W, H))
     pygame.display.set_caption("F-15 SE2 world map")
     clock = pygame.time.Clock()
@@ -660,7 +660,7 @@ def _show_world_viewer(
     #   vertex_screen_px = vertex_game_unit >> 2  →  MODEL_SCALE = CELL_SIZE/0x1000
     MODEL_SCALE = CELL_SIZE / 0x1000   # = 0.25  (game units → world units)
     FOV = 600.0            # perspective focal length (pixels)
-    NEAR = 10.0            # near-plane clip distance
+    NEAR = 1.0            # near-plane clip distance
     VIEW_DIST_CELLS = 10   # render radius in cells
     MOVE_SPEED = CELL_SIZE * 2
     TURN_SPEED = 1.5
