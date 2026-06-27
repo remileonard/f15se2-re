@@ -249,116 +249,479 @@ Priorité 3 : _UNIT_TYPE_LABELS[obj.unitType] (table codée en dur)
 
 ### Vue d'ensemble
 
-Le fichier `.3D3` contient une collection de modèles 3D indexés. Chaque modèle encode :
-des normales de faces (pour le back-face culling), des sommets, des arêtes, et des primitives
-(faces remplies ou lignes wireframe).
+Un fichier `.3D3` est une collection de modèles 3D numérotés. Chaque modèle est un flux
+binaire autonome encodant : des normales de faces (back-face culling), une liste de sommets
+(coordonnées 3D), une liste d'arêtes (paires de sommets), puis des primitives de rendu (faces
+pleines ou lignes wireframe).
 
-**Exemples de fichiers :**
+**Fichiers du moteur :**
 
-| Fichier      | Contenu                              |
-|--------------|--------------------------------------|
-| `CE.3D3`     | Objets terrain du théâtre CE (92 modèles) |
-| `15FLT.3D3`  | Appareils en vol (23+ modèles)       |
-| `PHOTO.3D3`  | Modèles photo-reconnaissance         |
+| Fichier      | Rôle                                   | Modèles (CE) |
+|--------------|----------------------------------------|-------------|
+| `CE.3D3`     | Objets terrain (bâtiments, SAM, piste) | 92          |
+| `15FLT.3D3`  | Appareils en vol                       | 23+         |
+| `PHOTO.3D3`  | Modèles photo-reconnaissance           | —           |
 
-### Structure binaire globale
+---
+
+### Structure du modèle décodé (en mémoire)
+
+Après décodage, chaque modèle est représenté par la structure suivante :
 
 ```
-Offset  Taille       Champ
-──────  ──────       ──────────────────────────────────────────────────────
-+0x00   2            signature  0x3333 (les deux octets ASCII '3','3')
-+0x02   2            model_count  N
-+0x04   N×2          header_words[]  offsets (u16) de chaque modèle dans object_data
-+0x04+N×2  2         object_data_size (u16)
-+?      object_data_size  object_data[]  flux de modèles concaténés
-+?      1            extra_section_count  (u8)  0 si pas de tables de sommets globales
-[si extra_section_count > 0 :]
-+?      extra_section_count  extra_a[]  table de réindexation X
-+?      extra_section_count  extra_b[]  table de réindexation Y
-+?      extra_section_count  extra_c[]  table de réindexation Z
-+?      1            vertex_x_count
-+?      vertex_x_count×2  vertex_x[]  (u16 → int16 signé)
-+?      1            vertex_y_count
-+?      vertex_y_count×2  vertex_y[]
-+?      1            vertex_z_count
-+?      vertex_z_count×2  vertex_z[]
+DecodedModel
+├── index         int        numéro du modèle dans le fichier .3D3
+├── offset        int        position en octets dans object_data
+│
+├── face_normals  FaceNormal[]   normales de visibilité (back-face culling)
+│   └─ FaceNormal
+│       ├── nx         int16   composante X de la normale
+│       ├── ny         int16   composante Y
+│       ├── nz         int16   composante Z
+│       └── threshold  int16   seuil : face visible si dot(view_dir, normal) > threshold
+│
+├── vertices      ModelVertex[]  liste de sommets (espace modèle)
+│   └─ ModelVertex
+│       ├── x  int16  coordonnée X (axe lateral droit)
+│       ├── y  int16  coordonnée Y (axe vertical, haut = positif)
+│       └── z  int16  coordonnée Z (axe profondeur)
+│
+├── edges         ModelEdge[]    liste d'arêtes (paires d'indices de sommets)
+│   └─ ModelEdge
+│       ├── va  int   indice du sommet A dans vertices[]
+│       └── vb  int   indice du sommet B dans vertices[]
+│
+├── faces         ModelFace[]    polygones remplis (rendu solide)
+│   └─ ModelFace
+│       ├── edge_indices  int[]  indices dans edges[] formant le contour
+│       ├── color         int    index dans la palette VGA (0–255)
+│       └── normal_index  int    index dans face_normals[] pour le culling
+│                                (si >= len(face_normals) → toujours visible)
+│
+└── wire_lines    ModelWireLine[]  segments wireframe (contours, cockpit, etc.)
+    └─ ModelWireLine
+        ├── edge_index  int  indice dans edges[]
+        └── color       int  index dans la palette VGA
+```
+
+**Diagramme des relations :**
+
+```
+ vertices[]          edges[]              faces[]
+ ──────────          ──────────────────   ──────────────────────────────────────
+ [0] (x,y,z)    ←── va=0  │              face_indices: [0, 2, 5]
+ [1] (x,y,z)    ←── vb=1  │              color: 42
+ [2] (x,y,z)    ←── va=1  │              normal_index: 1 ──→ face_normals[1]
+ [3] (x,y,z)    ←── vb=2  │                              (nx,ny,nz,threshold)
+ ...             ←── va=2  │
+                 ←── vb=0  │
+                     ...   │
+                           └──→ wire_lines[]: { edge_index, color }
+```
+
+**Unités de coordonnées :**
+
+Les coordonnées de sommets sont des `int16` en espace modèle. Conversion vers l'espace monde
+du visualiseur :
+
+```
+MODEL_SCALE     = CELL_SIZE / 0x1000 = 1024 / 4096 = 0.25  (objets terrain CE.3D3)
+FLT_MODEL_SCALE = MODEL_SCALE × 6    = 1.5                  (appareils 15FLT.3D3)
+```
+
+---
+
+### Structure binaire du fichier .3D3
+
+```
+Octet   Taille         Champ
+──────  ─────────────  ───────────────────────────────────────────────────────
++0x00   2              signature   u16 = 0x3333  (vérification obligatoire)
++0x02   2              N           u16 = nombre de modèles dans le fichier
++0x04   N × 2          offsets[]   u16[] offsets de chaque modèle dans object_data
++0x04+N×2  2           data_size   u16 = taille du bloc object_data en octets
++?      data_size      object_data  flux de modèles concaténés (voir §4.3)
++?      1              V           u8  = 0 si pas de tables globales de sommets
+                                        > 0 → V entrées dans chaque table
+[seulement si V > 0 :]
++?      V              extra_a[]   u8[V]  table de réindexation axe X
++?      V              extra_b[]   u8[V]  table de réindexation axe Y
++?      V              extra_c[]   u8[V]  table de réindexation axe Z
++?      1              Cx          u8  nombre de valeurs X globales
++?      Cx × 2         vertex_x[]  u16[Cx] (réinterprété int16 signé)
++?      1              Cy          u8
++?      Cy × 2         vertex_y[]  u16[Cy]
++?      1              Cz          u8
++?      Cz × 2         vertex_z[]  u16[Cz]
 ```
 
 **Accès à un modèle i :**
 
 ```python
-offset = header_words[i]
-model_stream = object_data[offset:]
+stream_start = offsets[i]          # offset dans object_data
+stream = object_data[stream_start:]
 ```
 
-### Flux d'un modèle 3D (object_data)
+---
+
+### Décodage d'un flux de modèle (object_data[offset:])
+
+Le décodage se fait séquentiellement en 5 phases. On maintient un pointeur de lecture `pos`
+qui avance au fil de la lecture.
+
+#### Phase 1 — Octet de mode de rendu (1 octet, ignoré)
 
 ```
-Position  Taille   Champ
-────────  ──────   ──────────────────────────────────────────────────────────
-+0        1        render_mode  (u8, ignoré pour le chargement)
-+1        variable LOD headers  : tant que (byte & 0x80), sauter 3 octets
-                                  → données LOD grossier (lointain)
-                                  → s'arrête au premier byte sans bit 7
-+?        1        opcode_byte  (u8)
-                   bits [4:0] = face_count (nombre de normales de visibilité)
-                   face_count > 0x10 ⟹ wide mode : mask_size = 4 (sinon 2)
-+?        face_count×8  face_normals[]  nx,ny,nz,threshold (4×int16)
-+?        1        vtx_al  (u8)
-                   bit 7 = indexed mode (si 1 : sommets via tables globales)
-                   bits [6:0] = vtx_count
-[mode inline (bit7=0):]
-+?        vtx_count × (mask_size + 6)
-                   pour chaque sommet : [mask_size octets] [x:i16] [y:i16] [z:i16]
-[mode indexed (bit7=1):]
-+?        vtx_count × (mask_size + 1)
-                   pour chaque sommet : [mask_size octets] [ref:u8]
-                   x = vertex_x[extra_a[ref]]  (réinterprété en int16 signé)
-                   y = vertex_y[extra_b[ref]]
-                   z = vertex_z[extra_c[ref]]
-+?        1        edge_count  (u8)
-+?        edge_count × (mask_size + 2)
-                   pour chaque arête : [mask_size octets] [va:u8] [vb:u8]
-+?        1        prim_count  (u8)   0xFF = mode RLE (arbre d'adjacence)
-[prim_count != 0xFF :]
-+?        prim_count × variable  primitives :
-                   opcode (u8)
-                   si (opcode & 3) == 1 : face remplie
-                     bits [6:2] = normal_index (back-face culling)
-                     n (u8) = nombre d'arêtes
-                     n × edge_idx (u8)
-                     color (u8)
-                   sinon : ligne wireframe
-                     mask_size octets (ignorés)
-                     edge_idx (u8)
-                     color (u8)
+pos=0  render_mode  u8  (contrôle interne de rendu, ignoré au chargement)
+pos=1
 ```
 
-### Normales de face (FaceNormal)
+#### Phase 2 — En-têtes LOD (variable)
+
+Le moteur stocke les données LOD (niveaux de détail croissants, du plus lointain au plus
+proche) en blocs de 3 octets. Chaque bloc a son bit 7 à 1. Le LOD le plus proche (plus grand
+détail) commence au premier octet sans bit 7.
 
 ```
-Champ      Type   Signification
-─────────  ─────  ─────────────────────────────────────────────────────────
-nx         int16  Composante X de la normale
-ny         int16  Composante Y de la normale
-nz         int16  Composante Z de la normale
-threshold  int16  Seuil de visibilité : face visible si dot(normal, view) > threshold
+tant que (data[pos] & 0x80 != 0) :
+    sauter 3 octets   ← en-tête LOD lointain (distance de transition, non décodé)
+
+→ pos pointe maintenant sur le début du LOD le plus détaillé
 ```
 
-### Coordonnées des sommets
-
-Les coordonnées sont des `int16` en espace modèle. L'axe Y est vertical (haut = positif).
-L'unité de modèle est environ `1/4096` de CELL_SIZE dans le visualiseur :
-
 ```
-MODEL_SCALE = CELL_SIZE / 0x1000 = 1024 / 4096 = 0.25
+Exemple :
+  pos:  [0x87][0x00][0x40]  ← LOD lointain (bit7=1, skip)
+        [0xC2][0x00][0x20]  ← LOD moyen (bit7=1, skip)
+        [0x0E]...           ← LOD proche (bit7=0) → décodage commence ici
 ```
 
-Pour les appareils (15FLT.3D3), on applique un facteur d'échelle supplémentaire :
+#### Phase 3 — Opcode + normales de visibilité de faces
 
 ```
-FLT_MODEL_SCALE = MODEL_SCALE × 6 = 1.5
+opcode_byte  u8
+  bits [4:0] = face_count   (nombre de normales de visibilité)
+  si face_count > 0x10 :  mask_size = 4 octets
+  sinon :                  mask_size = 2 octets
+
+  ┌──────────────────────────────────────────────────────────┐
+  │ mask_size est le nombre d'octets de masque de visibilité │
+  │ précédant chaque sommet, arête, et ligne wireframe.      │
+  │ Ces octets encodent dans quels états LOD l'élément est   │
+  │ actif. Pour le chargement, on les saute systématiquement.│
+  └──────────────────────────────────────────────────────────┘
+
+lecture de face_count × FaceNormal (8 octets chacune) :
+  pour i in range(face_count) :
+      nx        = read_i16()
+      ny        = read_i16()
+      nz        = read_i16()
+      threshold = read_i16()
 ```
+
+**Test de visibilité d'une face (back-face culling) :**
+
+```
+dot = view_dir.x * nx + view_dir.y * ny + view_dir.z * nz
+face_visible = (dot > threshold)
+```
+
+où `view_dir` est la direction normalisée de la caméra vers le modèle.
+
+#### Phase 4 — Sommets
+
+```
+vtx_al  u8
+  bit 7   = 1 → mode indexé (sommets depuis tables globales)
+          = 0 → mode inline (coordonnées explicites)
+  bits [6:0] = vtx_count  (nombre de sommets)
+```
+
+**Mode inline (bit 7 = 0) :**
+
+```
+pour i in range(vtx_count) :
+    sauter mask_size octets   ← masque de visibilité LOD (ignoré)
+    x = read_i16()
+    y = read_i16()
+    z = read_i16()
+    vertices.append((x, y, z))
+```
+
+**Mode indexé (bit 7 = 1) :**
+
+Les coordonnées ne sont pas stockées directement dans le flux ; elles proviennent de tables
+partagées à la fin du fichier `.3D3`. Un octet de référence indexe ces tables via trois tables
+intermédiaires (`extra_a/b/c`).
+
+```
+pour i in range(vtx_count) :
+    sauter mask_size octets
+    ref = read_u8()           ← index dans extra_a[], extra_b[], extra_c[]
+
+    xa = extra_a[ref]         ← réindexation axe X
+    yb = extra_b[ref]         ← réindexation axe Y
+    zc = extra_c[ref]         ← réindexation axe Z
+
+    x = vertex_x[xa]          ← valeur finale X (u16 → int16 signé)
+    y = vertex_y[yb]
+    z = vertex_z[zc]
+    vertices.append((x, y, z))
+
+Conversion u16 → int16 signé :
+    si v >= 0x8000 : v = v - 0x10000
+```
+
+**Schéma du mode indexé :**
+
+```
+  flux: ref=42
+           │
+           ├─ extra_a[42] = 7  ──→  vertex_x[7] = 0x01A0  →  x = +416
+           ├─ extra_b[42] = 3  ──→  vertex_y[3] = 0xFF80  →  y = -128
+           └─ extra_c[42] = 9  ──→  vertex_z[9] = 0x0060  →  z = +96
+```
+
+Ce mécanisme permet à plusieurs modèles de partager les mêmes tables de sommets globales,
+réduisant la taille totale du fichier.
+
+#### Phase 5 — Arêtes
+
+```
+edge_count = read_u8()
+
+pour i in range(edge_count) :
+    sauter mask_size octets   ← masque de visibilité LOD
+    va = read_u8()            ← indice du sommet A (dans vertices[])
+    vb = read_u8()            ← indice du sommet B
+    edges.append((va, vb))
+```
+
+#### Phase 6 — Primitives de rendu
+
+```
+prim_count = read_u8()
+```
+
+**Cas A — Primitives directes (`prim_count != 0 et prim_count != 0xFF`) :**
+
+```
+pour i in range(prim_count) :
+    opcode = read_u8()
+
+    si (opcode & 3) == 1 :      ← FACE REMPLIE
+        normal_index = (opcode & 0x7C) >> 2   ← bits [6:2]
+        n = read_u8()                          ← nombre d'arêtes du polygone
+        edge_indices = [read_u8() for _ in range(n)]
+        color = read_u8()
+        faces.append(ModelFace(edge_indices, color, normal_index))
+
+    sinon :                     ← LIGNE WIREFRAME
+        sauter mask_size octets
+        edge_idx = read_u8()
+        color    = read_u8()
+        wire_lines.append(ModelWireLine(edge_idx, color))
+```
+
+**Encodage de l'opcode de face :**
+
+```
+  bit 7   bit 6   bit 5   bit 4   bit 3   bit 2   bit 1   bit 0
+  ──────────────────────────────────────────────────────────────
+  [  ← normal_index (6 bits) ───────────────────────────── ]  type
+  normal_index = (opcode & 0x7C) >> 2       (bits 6..2)
+  type         = opcode & 0x03              (bits 1..0) == 1 → face
+```
+
+**Cas B — Mode RLE (`prim_count == 0xFF`) :**
+
+Ce mode utilise un arbre d'adjacence pour réordonner les primitives et optimiser le rendu
+(partage d'arêtes entre faces adjacentes). Structure après l'octet `0xFF` :
+
+```
+root        u8                    nœud racine de l'arbre
+tree[]      face_count × 2 u8    pour chaque nœud : [enfant_gauche, enfant_droit]
+                                  0xFF = feuille/null
+coord_offs  face_count × 2 i16   offset (signé) depuis data_base vers les primitives
+                                  de ce groupe d'arêtes
+run_cnts[]  face_count × 1 u8    nombre de primitives dans chaque groupe
+data_base   (position courante)   primitives compressées
+
+Décodage :
+    pour i in range(face_count) :
+        p = data_base + coord_offs[i]
+        pour _ in range(run_cnts[i]) :
+            p = decode_prim_command(data, p)   ← même logique que cas A
+```
+
+L'arbre en lui-même (nœuds `root` + `tree[]`) peut être ignoré pour un simple chargement ;
+seuls `coord_offs` et `run_cnts` sont nécessaires pour accéder aux primitives.
+
+---
+
+### Algorithme de décodage complet (pseudocode)
+
+```python
+def decode_model(data, base_offset, extra_a, extra_b, extra_c,
+                 vertex_x, vertex_y, vertex_z):
+    pos = base_offset
+
+    # Phase 1 — render mode (ignoré)
+    pos += 1
+
+    # Phase 2 — sauter les en-têtes LOD grossiers
+    while data[pos] & 0x80:
+        pos += 3
+
+    # Phase 3 — opcode + normales
+    opcode = data[pos]; pos += 1
+    face_count = opcode & 0x1F
+    mask_size  = 4 if face_count > 0x10 else 2
+    normals = []
+    for _ in range(face_count):
+        normals.append(read_i16x4(data, pos)); pos += 8
+
+    # Phase 4 — sommets
+    vtx_al = data[pos]; pos += 1
+    vtx_count = vtx_al & 0x7F
+    vertices = []
+    if vtx_al & 0x80:                          # mode indexé
+        for _ in range(vtx_count):
+            pos += mask_size
+            ref = data[pos]; pos += 1
+            x = to_signed(vertex_x[extra_a[ref]])
+            y = to_signed(vertex_y[extra_b[ref]])
+            z = to_signed(vertex_z[extra_c[ref]])
+            vertices.append((x, y, z))
+    else:                                       # mode inline
+        for _ in range(vtx_count):
+            pos += mask_size
+            x = read_i16(data, pos); pos += 2
+            y = read_i16(data, pos); pos += 2
+            z = read_i16(data, pos); pos += 2
+            vertices.append((x, y, z))
+
+    # Phase 5 — arêtes
+    edge_count = data[pos]; pos += 1
+    edges = []
+    for _ in range(edge_count):
+        pos += mask_size
+        va = data[pos]; pos += 1
+        vb = data[pos]; pos += 1
+        edges.append((va, vb))
+
+    # Phase 6 — primitives
+    prim_count = data[pos]; pos += 1
+    faces, lines = [], []
+
+    if prim_count == 0xFF:                     # mode RLE
+        pos += 1 + face_count * 2             # skip root + tree
+        coord_offs = [read_i16(data, pos + i*2) for i in range(face_count)]
+        pos += face_count * 2
+        run_cnts   = [data[pos + i] for i in range(face_count)]
+        pos += face_count
+        data_base = pos
+        for i in range(face_count):
+            p = data_base + coord_offs[i]
+            for _ in range(run_cnts[i]):
+                p, prim = decode_one_prim(data, p, mask_size)
+                (faces if prim.is_face else lines).append(prim)
+
+    else:                                      # mode direct
+        for _ in range(prim_count):
+            pos, prim = decode_one_prim(data, pos, mask_size)
+            (faces if prim.is_face else lines).append(prim)
+
+    return DecodedModel(normals, vertices, edges, faces, lines)
+
+
+def decode_one_prim(data, pos, mask_size):
+    op = data[pos]; pos += 1
+    if (op & 3) == 1:                         # face remplie
+        normal_idx = (op & 0x7C) >> 2
+        n  = data[pos]; pos += 1
+        ei = list(data[pos:pos+n]); pos += n
+        color = data[pos]; pos += 1
+        return pos, ModelFace(ei, color, normal_idx)
+    else:                                     # ligne wireframe
+        pos += mask_size
+        edge_idx = data[pos]; pos += 1
+        color    = data[pos]; pos += 1
+        return pos, ModelWireLine(edge_idx, color)
+```
+
+---
+
+### Rendu d'un modèle décodé
+
+**Algorithme de rendu (vue 3D, painter's algorithm) :**
+
+```python
+def render_model(model, cam_pos, cam_basis, surface, palette):
+    # 1. Projeter tous les sommets en coordonnées écran
+    screen_pts = []
+    for v in model.vertices:
+        world = transform(v, model_pos, cam_basis)  # rotation + translation
+        screen = project(world, cam_pos)            # perspective
+        screen_pts.append(screen)
+
+    # 2. Calculer la profondeur de chaque face (centroïde Z)
+    face_depths = []
+    for face in model.faces:
+        pts = face_points(face, model.edges, screen_pts)
+        z = mean_depth(pts)
+        face_depths.append((z, face, pts))
+
+    # 3. Trier par profondeur décroissante (painter's algorithm)
+    face_depths.sort(key=lambda t: t[0], reverse=True)
+
+    # 4. Dessiner les faces (back-face culling)
+    view_dir = normalize(model_pos - cam_pos)
+    for z, face, pts in face_depths:
+        n = model.face_normals[face.normal_index]
+        dot = view_dir.x*n.nx + view_dir.y*n.ny + view_dir.z*n.nz
+        if dot <= n.threshold:
+            continue                              # face dos à la caméra
+        color_rgb = palette[face.color]
+        draw_filled_polygon(surface, pts, color_rgb)
+
+    # 5. Dessiner les arêtes wireframe par-dessus
+    for line in model.wire_lines:
+        edge = model.edges[line.edge_index]
+        a, b = screen_pts[edge.va], screen_pts[edge.vb]
+        if a and b:
+            draw_line(surface, palette[line.color], a, b)
+```
+
+**Construction du polygone d'une face :**
+
+Une face référence une liste d'indices dans `edges[]`. Chaque arête a deux sommets.
+Pour reconstruire le polygone ordonné :
+
+```python
+def face_points(face, edges, screen_pts):
+    pts = []
+    for ei in face.edge_indices:
+        e = edges[ei]
+        pts.append(screen_pts[e.va])
+        # vb est partagé avec l'arête suivante (les arêtes forment un cycle)
+    return pts
+```
+
+---
+
+### Palette de couleurs VGA
+
+Les indices `color` dans les faces et lignes référencent la palette VGA 256 couleurs du jeu.
+Entrées notables :
+
+| Plage     | Contenu                            |
+|-----------|------------------------------------|
+| 0–15      | Couleurs EGA standard              |
+| 16–31     | Rampe de gris (0 → 255)            |
+| 32–55     | Spectre saturé (rouge → violet)    |
+| 56–247    | Cycles à demi/quart d'intensité    |
+| 248–255   | Noir (non utilisé)                 |
 
 ---
 
