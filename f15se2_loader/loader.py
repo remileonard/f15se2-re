@@ -1,12 +1,37 @@
 from __future__ import annotations
 
 import argparse
-import math
-import struct
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
+from f15se_helpers import _read_bytes, _read_u8, _read_u16, _read_i16
+from f15se_entities import (
+    ThreeD3Model,
+    ThreeDTerrain,
+    ThreeDGGrid,
+    ThreeWld,
+    DecodedModel, 
+    WldObject,
+    WldUnit,
+    TerrainTile,
+    TileEntry,
+    FaceNormal,
+    ModelVertex,
+    ModelEdge,
+    ModelFace,
+    ModelWireLine
+)
 
+from f15se_constant import (
+    _AIRCRAFT_TYPES, 
+    _AIRCRAFT_MODEL_IDS,
+    TILE_OBJECT_SIZE,
+    MAX_TILE_DATA,
+    _DEFAULT_PALETTE,
+    _TILE_COLORS,
+    _LOD_DIM,
+    WLD_MAX
+)
 try:
     import pygame  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
@@ -14,321 +39,6 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 PathLike = Union[str, Path]
-
-MAX_TILE_DATA = 4000
-TILE_OBJECT_SIZE = 7
-
-
-@dataclass
-class TileEntry:
-    x: int
-    y: int
-    z: int
-    shape: int
-
-
-@dataclass
-class TerrainTile:
-    object_count: int
-    objects: list[TileEntry] = field(default_factory=list)
-
-
-@dataclass
-class ThreeDTerrain:
-    path: Path
-    signature: int
-    category_sizes: list[int] = field(default_factory=list)
-    tile_counts: list[list[int]] = field(default_factory=list)
-    categories: list[list[TerrainTile]] = field(default_factory=list)
-
-    def summary(self) -> dict[str, object]:
-        tile_count = sum(len(category) for category in self.categories)
-        object_count = sum(sum(tile.object_count for tile in category) for category in self.categories)
-        return {
-            "path": str(self.path),
-            "signature": self.signature,
-            "category_sizes": self.category_sizes,
-            "tile_counts": self.tile_counts,
-            "category_count": len(self.categories),
-            "tile_count": tile_count,
-            "object_count": object_count,
-        }
-
-    def describe(self) -> str:
-        summary = self.summary()
-        lines = [
-            "3DT terrain",
-            f"  path: {summary['path']}",
-            f"  signature: 0x{summary['signature']:04x}",
-            f"  category_sizes: {summary['category_sizes']}",
-            f"  categories: {summary['category_count']}",
-            f"  tiles: {summary['tile_count']}",
-            f"  objects: {summary['object_count']}",
-        ]
-        for category_idx, category in enumerate(self.categories):
-            lines.append(f"  category {category_idx}: {len(category)} tiles")
-            for tile_idx, tile in enumerate(category):
-                lines.append(
-                    f"    tile {tile_idx}: {tile.object_count} objects"
-                )
-                for object_idx, obj in enumerate(tile.objects):
-                    lines.append(
-                        f"      object {object_idx}: x={obj.x}, y={obj.y}, z={obj.z}, shape=0x{obj.shape:02x}"
-                    )
-        return "\n".join(lines)
-
-
-@dataclass
-class ThreeD3Model:
-    path: Path
-    signature: int
-    header_words: list[int] = field(default_factory=list)
-    object_data: bytes = b""
-    extra_bytes_a: bytes = b""
-    extra_bytes_b: bytes = b""
-    extra_bytes_c: bytes = b""
-    vertex_x: list[int] = field(default_factory=list)
-    vertex_y: list[int] = field(default_factory=list)
-    vertex_z: list[int] = field(default_factory=list)
-
-    def summary(self) -> dict[str, object]:
-        return {
-            "path": str(self.path),
-            "signature": self.signature,
-            "header_words": self.header_words,
-            "object_bytes": len(self.object_data),
-            "extra_bytes_a": len(self.extra_bytes_a),
-            "extra_bytes_b": len(self.extra_bytes_b),
-            "extra_bytes_c": len(self.extra_bytes_c),
-            "vertex_count_x": len(self.vertex_x),
-            "vertex_count_y": len(self.vertex_y),
-            "vertex_count_z": len(self.vertex_z),
-        }
-
-    def describe(self) -> str:
-        summary = self.summary()
-        return "\n".join(
-            [
-                "3D3 model",
-                f"  path: {summary['path']}",
-                f"  signature: 0x{summary['signature']:04x}",
-                f"  header_words: {summary['header_words']}",
-                f"  object_bytes: {summary['object_bytes']}",
-                f"  extra_bytes: {summary['extra_bytes_a']}/{summary['extra_bytes_b']}/{summary['extra_bytes_c']}",
-                f"  vertex_tables: {summary['vertex_count_x']}/{summary['vertex_count_y']}/{summary['vertex_count_z']}",
-            ]
-        )
-
-
-@dataclass
-class ThreeDGGrid:
-    path: Path
-    signature: int
-    header: bytes = b""
-    layer1: bytes = b""
-    layer2: bytes = b""
-    layer3: bytes = b""
-    layer4: bytes = b""
-
-    def summary(self) -> dict[str, object]:
-        return {
-            "path": str(self.path),
-            "signature": self.signature,
-            "header_bytes": len(self.header),
-            "layer1_bytes": len(self.layer1),
-            "layer2_bytes": len(self.layer2),
-            "layer3_bytes": len(self.layer3),
-            "layer4_bytes": len(self.layer4),
-        }
-
-    def describe(self) -> str:
-        summary = self.summary()
-        preview = self.render_preview()
-        return "\n".join(
-            [
-                "3DG grid",
-                f"  path: {summary['path']}",
-                f"  signature: 0x{summary['signature']:04x}",
-                f"  section_sizes: {summary['header_bytes']}/{summary['layer1_bytes']}/{summary['layer2_bytes']}/{summary['layer3_bytes']}/{summary['layer4_bytes']}",
-                f"  preview:\n{preview}",
-            ]
-        )
-
-    def render_preview(self, width: int = 8, height: int = 8) -> str:
-        values = self.layer2[: width * height]
-        rows: list[str] = []
-        for row in range(height):
-            chunk = values[row * width : (row + 1) * width]
-            rows.append(" ".join(f"{value:02x}" for value in chunk))
-        return "\n".join(rows)
-
-
-@dataclass
-class WldObject:
-    """16-byte world target/object entry from a .WLD file (struct WorldObject)."""
-    unit_ref: int       # uint16 — type reference
-    x: int              # uint16 — world X
-    y: int              # uint16 — world Y
-    unit_type: int      # int16
-    target_flags: int   # int16 (0x100=airbase, 0x200=large, 0x400=waypoint…)
-    occupant_type: int  # int16 — plane type stationed here
-    patrol_count: int   # int16
-    object_idx: int     # int16 & 0x7f
-
-    @property
-    def is_airbase(self) -> bool:
-        return bool(self.target_flags & 0x100)
-
-
-@dataclass
-class WldUnit:
-    """36-byte flight unit entry from a .WLD file (struct FlightUnit)."""
-    waypoint_idx: int
-    x: int          # uint16
-    y: int          # uint16
-    altitude: int   # uint16
-    heading: int    # int16
-    pitch: int      # int16
-    roll: int       # int16
-    plane_type: int # int16
-    flags: int      # int16
-    max_speed: int  # int16
-    fuel: int       # uint16
-
-
-@dataclass
-class ThreeWld:
-    path: Path
-    buf1: int = 0
-    buf2: int = 0
-    buf3: int = 0
-    objects: list[WldObject] = field(default_factory=list)
-    units: list[WldUnit] = field(default_factory=list)
-    names: list[str] = field(default_factory=list)  # worldStringBuf strings, indexed sequentially
-
-    def name_for(self, obj_idx: int, obj: 'WldObject') -> str:
-        """Return the best available name for a WldObject.
-
-        Priority:
-          1. Sequential index (position of the object in worldObjects[]).
-          2. unit_ref field (struct.h says it is the index into wldOffsets).
-          3. Hardcoded Python dict keyed by unit_type (simple fallback).
-        """
-        # 1 — sequential index
-        name = self.names[obj_idx] if obj_idx < len(self.names) else ''
-        if _is_printable(name):
-            return name
-        # 2 — unit_ref as name index
-        name = self.names[obj.unit_ref] if 0 < obj.unit_ref < len(self.names) else ''
-        if _is_printable(name):
-            return name
-        # 3 — generic type from unit_type
-        return _UNIT_TYPE_LABELS.get(obj.unit_type, '')
-
-    def describe(self) -> str:
-        lines = [
-            f"WLD world file: {self.path}",
-            f"  objects: {len(self.objects)}  units: {len(self.units)}  strings: {len(self.names)}",
-        ]
-        lines.append("--- Objects ---")
-        for i, o in enumerate(self.objects):
-            if o.x == 0 and o.y == 0:
-                continue
-            flags = []
-            if o.is_airbase:
-                flags.append("AIRBASE")
-            if o.target_flags & 0x200:
-                flags.append("LARGE")
-            if o.target_flags & 0x400:
-                flags.append("WAYPOINT")
-            if o.target_flags & 0x800:
-                flags.append("DEST")
-            if o.target_flags & 0x008:
-                flags.append("opt")
-            name = self.name_for(i, o)
-            lines.append(
-                f"  [{i:3d}] x={o.x:5d} y={o.y:5d}  type={o.unit_type:3d}"
-                f"  ref={o.unit_ref:3d}  obj={o.object_idx:3d}"
-                f"  flags=0x{o.target_flags:04x}"
-                f"  {(' '.join(flags) or '-'):20s}  \"{name}\""
-                + (f"  [occupant: {aircraft_name(o.occupant_type)}]" if o.occupant_type > 0 else "")
-            )
-        lines.append("--- Units (flight units / flightDataBuf) ---")
-        for i, u in enumerate(self.units):
-            lines.append(
-                f"  [{i:3d}] x={u.x:5d} y={u.y:5d}  alt={u.altitude:5d}"
-                f"  hdg={u.heading:6d}  {aircraft_name(u.plane_type)}"
-            )
-        lines.append("--- String table (worldStringBuf) ---")
-        for i, n in enumerate(self.names):
-            if _is_printable(n):
-                lines.append(f"  [{i:3d}] {repr(n)}")
-        return "\n".join(lines)
-
-def _is_printable(s: str) -> bool:
-    """True when s is a non-empty string containing only printable ASCII."""
-    return bool(s) and all(32 <= ord(c) <= 126 for c in s)
-
-
-# Hardcoded fallback labels for WorldObject.unit_type values.
-# Derived from reverse-engineering unit_type usage across stgen.c / egcombat.c.
-_UNIT_TYPE_LABELS: dict[int, str] = {
-    0:  '',
-    1:  'Waypoint',
-    2:  'Bridge',
-    3:  'Road Junction',
-    4:  'Armored Column',
-    5:  'Infantry',
-    6:  'Truck Column',
-    7:  'Recon',
-    8:  'Supply Depot',
-    9:  'SAM Site',
-    10: 'AA Gun',
-    11: 'SAM Radar',
-    12: 'Command Post',
-    13: 'Fuel Dump',
-    14: 'Ammo Dump',
-    15: 'Factory',
-    16: 'Power Plant',
-    17: 'Rail Yard',
-    18: 'Airfield',
-    19: 'Naval Base',
-    20: 'Oil Refinery',
-    21: 'Port/Refinery',
-}
-
-# Aircraft type catalogue — mirrors aircraftTypes[19] in egdata.c.
-# Each entry: (short_name, nato_reporting_name).
-# Index == WldUnit.plane_type == WldObject.occupant_type.
-_AIRCRAFT_TYPES: list[tuple[str, str]] = [
-    ("MIG-23",  "Flogger"),   # 0
-    ("MIG-25",  "Foxbat"),    # 1
-    ("MIG-29",  "Fulcrum"),   # 2
-    ("F-1",     "Mirage"),    # 3
-    ("Su-27",   "Flanker"),   # 4
-    ("IL-76",   "Mainstay"),  # 5
-    ("F-4E",    "Phantom"),   # 6
-    ("F-14",    "Tomcat"),    # 7
-    ("F-18",    "Hornet"),    # 8
-    ("An-72",   "Coaler"),    # 9
-    ("F-18",    "Hornet"),    # 10  (friendly variant)
-    ("MIG-23",  "Flogger"),   # 11  (variant)
-    ("F-14",    "Tomcat"),    # 12  (friendly variant)
-    ("F-4E",    "Phantom"),   # 13  (friendly variant)
-    ("MIG-17",  "Fresco"),    # 14
-    ("Tu-95",   "Bear"),      # 15
-    ("Mi-24",   "Hind"),      # 16
-    ("F-5",     "Tiger"),     # 17
-    ("767",     "Boeing"),    # 18
-]
-
-
-# Shape indices into 15FLT.3D3 per aircraftTypes[i].modelId in egdata.c.
-# -1 = no 3D model available for that type.
-_AIRCRAFT_MODEL_IDS: list[int] = [
-    17, 18, 19, 20, 19, 16, 18, 19, -1,  0,   # 0-9
-    -1,  0, -1, -1, 17,  0, 17, 22, -1,        # 10-18
-]
 
 
 def aircraft_name(plane_type: int) -> str:
@@ -344,85 +54,6 @@ def aircraft_model_id(plane_type: int) -> int:
     if 0 <= plane_type < len(_AIRCRAFT_MODEL_IDS):
         return _AIRCRAFT_MODEL_IDS[plane_type]
     return -1
-
-
-@dataclass
-class FaceNormal:
-    nx: int
-    ny: int
-    nz: int
-    threshold: int
-
-
-@dataclass
-class ModelVertex:
-    x: int
-    y: int
-    z: int
-
-
-@dataclass
-class ModelEdge:
-    va: int
-    vb: int
-
-
-@dataclass
-class ModelFace:
-    edge_indices: list[int]
-    color: int
-    normal_index: int = 0  # bits [6:2] of opcode byte → face normal slot
-
-
-@dataclass
-class ModelWireLine:
-    edge_index: int
-    color: int
-
-
-@dataclass
-class DecodedModel:
-    index: int
-    offset: int
-    face_normals: list[FaceNormal] = field(default_factory=list)
-    vertices: list[ModelVertex] = field(default_factory=list)
-    edges: list[ModelEdge] = field(default_factory=list)
-    faces: list[ModelFace] = field(default_factory=list)
-    wire_lines: list[ModelWireLine] = field(default_factory=list)
-
-    def describe(self) -> str:
-        lines = [
-            f"model #{self.index} @ 0x{self.offset:04x}",
-            f"  vertices={len(self.vertices)} edges={len(self.edges)} "
-            f"faces={len(self.faces)} lines={len(self.wire_lines)}",
-        ]
-        for i, v in enumerate(self.vertices):
-            lines.append(f"  v{i}: ({v.x}, {v.y}, {v.z})")
-        for i, e in enumerate(self.edges):
-            lines.append(f"  e{i}: {e.va} -> {e.vb}")
-        for i, f in enumerate(self.faces):
-            lines.append(f"  face {i}: edges={f.edge_indices} color={f.color} normal={f.normal_index}")
-        for i, ln in enumerate(self.wire_lines):
-            lines.append(f"  line {i}: edge={ln.edge_index} color={ln.color}")
-        return "\n".join(lines)
-
-def _read_bytes(data: bytes, offset: int, size: int, *, name: str) -> bytes:
-    if offset + size > len(data):
-        raise ValueError(f"Unexpected end of file while reading {name}")
-    return data[offset : offset + size]
-
-
-def _read_u8(data: bytes, offset: int) -> int:
-    return int(_read_bytes(data, offset, 1, name="u8")[0])
-
-
-def _read_u16(data: bytes, offset: int) -> int:
-    return int.from_bytes(_read_bytes(data, offset, 2, name="u16"), "little")
-
-
-def _read_i16(data: bytes, offset: int) -> int:
-    return int.from_bytes(_read_bytes(data, offset, 2, name="i16"), "little", signed=True)
-
 
 
 def load_3d3(path: PathLike) -> ThreeD3Model:
@@ -591,9 +222,6 @@ def load_3dg(path: PathLike) -> ThreeDGGrid:
     )
 
 
-# WLD world coordinates run from 0 to 0x8000 (32768).
-# Y-axis is inverted: y=0 → south (high row), y=0x8000 → north (row 0).
-WLD_MAX = 32768.0
 
 
 def load_wld(path: PathLike) -> ThreeWld:
@@ -681,13 +309,6 @@ def load_wld(path: PathLike) -> ThreeWld:
     return ThreeWld(path=path, buf1=buf1, buf2=buf2, buf3=buf3,
                     objects=objects, units=units, names=names)
 
-
-# ── 3DG grid resolver ─────────────────────────────────────────────────────────
-# Mirrors eg3dgrid.c process3dg().
-# LOD dimensions (cells per axis):  LOD0=1024  LOD1=256  LOD2=64  LOD3=16
-# LOD 4 (8×8) requires the theater-specific g_topLodGrid and is omitted here.
-# LODs 0-3 only need the 3DG file layers and recurse at most to LOD 3.
-_LOD_DIM = [1024, 256, 64, 16]  # index = LOD 0-3
 
 
 def process_3dg(grid: ThreeDGGrid, lod: int, col: int, row: int) -> int:
@@ -953,77 +574,6 @@ def _render_grid_surface(grid: ThreeDGGrid, width: int = 320, height: int = 240)
     pygame.display.flip()
     return surface
 
-# Default 256-entry palette used by the model viewer when the game
-# Full 256-entry VGA palette generated by src/vgapal.c (vgapal 256).
-# Standard VGA colour layout: 0-15 = EGA colours, 16-31 = grey ramp,
-# 32-55 = full-saturation spectrum, 56-247 = half/quarter-intensity cycles,
-# 248-255 = black (unused).
-_DEFAULT_PALETTE: list[tuple[int, int, int]] = [
-    (  0,  0,  0), (  0,  0,170), (  0,170,  0), (  0,170,170),
-    (170,  0,  0), (170,  0,170), (170, 85,  0), (170,170,170),
-    ( 85, 85, 85), ( 85, 85,255), ( 85,255, 85), ( 85,255,255),
-    (255, 85, 85), (255, 85,255), (255,255, 85), (255,255,255),
-    (  0,  0,  0), ( 20, 20, 20), ( 32, 32, 32), ( 44, 44, 44),
-    ( 56, 56, 56), ( 69, 69, 69), ( 81, 81, 81), ( 97, 97, 97),
-    (113,113,113), (130,130,130), (146,146,146), (162,162,162),
-    (182,182,182), (203,203,203), (227,227,227), (255,255,255),
-    (  0,  0,255), ( 65,  0,255), (125,  0,255), (190,  0,255),
-    (255,  0,255), (255,  0,190), (255,  0,125), (255,  0, 65),
-    (255,  0,  0), (255, 65,  0), (255,125,  0), (255,190,  0),
-    (255,255,  0), (190,255,  0), (125,255,  0), ( 65,255,  0),
-    (  0,255,  0), (  0,255, 65), (  0,255,125), (  0,255,190),
-    (  0,255,255), (  0,190,255), (  0,125,255), (  0, 65,255),
-    (125,125,255), (158,125,255), (190,125,255), (223,125,255),
-    (255,125,255), (255,125,223), (255,125,190), (255,125,158),
-    (255,125,125), (255,158,125), (255,190,125), (255,223,125),
-    (255,255,125), (223,255,125), (190,255,125), (158,255,125),
-    (125,255,125), (125,255,158), (125,255,190), (125,255,223),
-    (125,255,255), (125,223,255), (125,190,255), (125,158,255),
-    (182,182,255), (199,182,255), (219,182,255), (235,182,255),
-    (255,182,255), (255,182,235), (255,182,219), (255,182,199),
-    (255,182,182), (255,199,182), (255,219,182), (255,235,182),
-    (255,255,182), (235,255,182), (219,255,182), (199,255,182),
-    (182,255,182), (182,255,199), (182,255,219), (182,255,235),
-    (182,255,255), (182,235,255), (182,219,255), (182,199,255),
-    (  0,  0,113), ( 28,  0,113), ( 56,  0,113), ( 85,  0,113),
-    (113,  0,113), (113,  0, 85), (113,  0, 56), (113,  0, 28),
-    (113,  0,  0), (113, 28,  0), (113, 56,  0), (113, 85,  0),
-    (113,113,  0), ( 85,113,  0), ( 56,113,  0), ( 28,113,  0),
-    (  0,113,  0), (  0,113, 28), (  0,113, 56), (  0,113, 85),
-    (  0,113,113), (  0, 85,113), (  0, 56,113), (  0, 28,113),
-    ( 56, 56,113), ( 69, 56,113), ( 85, 56,113), ( 97, 56,113),
-    (113, 56,113), (113, 56, 97), (113, 56, 85), (113, 56, 69),
-    (113, 56, 56), (113, 69, 56), (113, 85, 56), (113, 97, 56),
-    (113,113, 56), ( 97,113, 56), ( 85,113, 56), ( 69,113, 56),
-    ( 56,113, 56), ( 56,113, 69), ( 56,113, 85), ( 56,113, 97),
-    ( 56,113,113), ( 56, 97,113), ( 56, 85,113), ( 56, 69,113),
-    ( 81, 81,113), ( 89, 81,113), ( 97, 81,113), (105, 81,113),
-    (113, 81,113), (113, 81,105), (113, 81, 97), (113, 81, 89),
-    (113, 81, 81), (113, 89, 81), (113, 97, 81), (113,105, 81),
-    (113,113, 81), (105,113, 81), ( 97,113, 81), ( 89,113, 81),
-    ( 81,113, 81), ( 81,113, 89), ( 81,113, 97), ( 81,113,105),
-    ( 81,113,113), ( 81,105,113), ( 81, 97,113), ( 81, 89,113),
-    (  0,  0, 65), ( 16,  0, 65), ( 32,  0, 65), ( 48,  0, 65),
-    ( 65,  0, 65), ( 65,  0, 48), ( 65,  0, 32), ( 65,  0, 16),
-    ( 65,  0,  0), ( 65, 16,  0), ( 65, 32,  0), ( 65, 48,  0),
-    ( 65, 65,  0), ( 48, 65,  0), ( 32, 65,  0), ( 16, 65,  0),
-    (  0, 65,  0), (  0, 65, 16), (  0, 65, 32), (  0, 65, 48),
-    (  0, 65, 65), (  0, 48, 65), (  0, 32, 65), (  0, 16, 65),
-    ( 32, 32, 65), ( 40, 32, 65), ( 48, 32, 65), ( 56, 32, 65),
-    ( 65, 32, 65), ( 65, 32, 56), ( 65, 32, 48), ( 65, 32, 40),
-    ( 65, 32, 32), ( 65, 40, 32), ( 65, 48, 32), ( 65, 56, 32),
-    ( 65, 65, 32), ( 56, 65, 32), ( 48, 65, 32), ( 40, 65, 32),
-    ( 32, 65, 32), ( 32, 65, 40), ( 32, 65, 48), ( 32, 65, 56),
-    ( 32, 65, 65), ( 32, 56, 65), ( 32, 48, 65), ( 32, 40, 65),
-    ( 44, 44, 65), ( 48, 44, 65), ( 52, 44, 65), ( 60, 44, 65),
-    ( 65, 44, 65), ( 65, 44, 60), ( 65, 44, 52), ( 65, 44, 48),
-    ( 65, 44, 44), ( 65, 48, 44), ( 65, 52, 44), ( 65, 60, 44),
-    ( 65, 65, 44), ( 60, 65, 44), ( 52, 65, 44), ( 48, 65, 44),
-    ( 44, 65, 44), ( 44, 65, 48), ( 44, 65, 52), ( 44, 65, 60),
-    ( 44, 65, 65), ( 44, 60, 65), ( 44, 52, 65), ( 44, 48, 65),
-    (  0,  0,  0), (  0,  0,  0), (  0,  0,  0), (  0,  0,  0),
-    (  0,  0,  0), (  0,  0,  0), (  0,  0,  0), (  0,  0,  0),
-]
 
 
 def _compute_tile_bg_colors(
@@ -1058,15 +608,7 @@ def _compute_tile_bg_colors(
     return result
 
 
-# Per-tile-index fallback colors (used when no model data is loaded).
-# 0-15 = actual terrain categories; 0x10/0x11 = sea/out-of-bounds.
-_TILE_COLORS: list[tuple[int, int, int]] = [
-    ( 80, 120,  60), (100, 145,  75), ( 70, 110,  50), ( 60, 100,  45),  # 0-3  grassland
-    (130,  95,  55), (155, 115,  65), (175, 135,  85), (115,  95,  75),  # 4-7  dry/desert
-    ( 50,  90, 150), ( 60, 100, 160), ( 70, 110, 170), ( 45,  80, 140),  # 8-11 water
-    (120, 120, 120), (145, 145, 135), (105, 105, 105), (165, 155, 145),  # 12-15 urban
-    ( 25,  40,  70), ( 18,  32,  58),                                    # 0x10/0x11 sea
-]
+
 
 
 def _show_world_viewer(
