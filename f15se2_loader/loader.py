@@ -4,7 +4,7 @@ import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
-from f15se_helpers import _read_bytes, _read_u8, _read_u16, _read_i16
+from f15se_helpers import _read_bytes, _read_u8, _read_u16, _read_i16, aircraft_name
 from f15se_entities import (
     ThreeD3Model,
     ThreeDTerrain,
@@ -39,14 +39,6 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 PathLike = Union[str, Path]
-
-
-def aircraft_name(plane_type: int) -> str:
-    """Return 'SHORT (NATO)' for a plane_type index into aircraftTypes[]."""
-    if 0 <= plane_type < len(_AIRCRAFT_TYPES):
-        short, nato = _AIRCRAFT_TYPES[plane_type]
-        return f"{short} ({nato})"
-    return f"plane#{plane_type}"
 
 
 def aircraft_model_id(plane_type: int) -> int:
@@ -709,10 +701,7 @@ def _show_world_viewer(
     # Pre-compute tile background colors from model face data for all LODs.
     # This gives terrain-accurate colors derived from the dominant face color
     # of each tile's models (instead of the static _TILE_COLORS fallback).
-    tile_bg_by_lod: dict[int, dict[int, tuple[int, int, int]]] = {
-        l: _compute_tile_bg_colors(terrain, l, models_by_shape)
-        for l in range(4)
-    }
+    
 
     # ── State ─────────────────────────────────────────────────────────────────
     lod = 3
@@ -837,8 +826,7 @@ def _show_world_viewer(
 
         for _, col, row in cells:
             tile_idx = process_3dg(grid, lod, col, row)
-            bg = (tile_bg_by_lod.get(lod, {}).get(tile_idx)
-                  or _TILE_COLORS[min(tile_idx, len(_TILE_COLORS) - 1)])
+            bg = (_TILE_COLORS[min(tile_idx, len(_TILE_COLORS) - 1)])
 
             x0 = col * CELL_SIZE;       x1 = (col + 1) * CELL_SIZE
             z0 = row * CELL_SIZE;       z1 = (row + 1) * CELL_SIZE
@@ -984,8 +972,7 @@ def _show_world_viewer(
                 if sx + cell_px < 0 or sx > W:
                     continue
                 tile_idx = process_3dg(grid, lod, col, row)
-                color = (tile_bg_by_lod.get(lod, {}).get(tile_idx)
-                         or _TILE_COLORS[min(tile_idx, len(_TILE_COLORS) - 1)])
+                color = (_TILE_COLORS[min(tile_idx, len(_TILE_COLORS) - 1)])
                 r = pygame.Rect(int(sx), int(sy),
                                 max(1, int(cell_px) - 1), max(1, int(cell_px) - 1))
                 pygame.draw.rect(surface, color, r)

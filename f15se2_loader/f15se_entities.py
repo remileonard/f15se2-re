@@ -1,7 +1,9 @@
 from dataclasses import dataclass, field
 from pathlib import Path
-from f15se_helpers import _is_printable
-from f15se_constant import _UNIT_TYPE_LABELS
+from f15se_helpers import _is_printable, aircraft_name
+from f15se_constant import (
+    _UNIT_TYPE_LABELS
+)
 
 @dataclass
 class TileEntry:

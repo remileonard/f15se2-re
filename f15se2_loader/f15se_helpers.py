@@ -1,3 +1,5 @@
+from f15se_constant import _AIRCRAFT_TYPES
+
 def _read_bytes(data: bytes, offset: int, size: int, *, name: str) -> bytes:
     if offset + size > len(data):
         raise ValueError(f"Unexpected end of file while reading {name}")
@@ -15,3 +17,10 @@ def _read_i16(data: bytes, offset: int) -> int:
 def _is_printable(s: str) -> bool:
     """True when s is a non-empty string containing only printable ASCII."""
     return bool(s) and all(32 <= ord(c) <= 126 for c in s)
+
+def aircraft_name(plane_type: int) -> str:
+    """Return 'SHORT (NATO)' for a plane_type index into aircraftTypes[]."""
+    if 0 <= plane_type < len(_AIRCRAFT_TYPES):
+        short, nato = _AIRCRAFT_TYPES[plane_type]
+        return f"{short} ({nato})"
+    return f"plane#{plane_type}"
