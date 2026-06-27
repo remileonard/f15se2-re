@@ -4,7 +4,7 @@
 #include "egtypes.h"
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "slot.h"
 #include "const.h"
 
@@ -12,19 +12,19 @@
 #include <memory.h>
 
 /* Private helpers for this translation unit. */
-int createFileWrapper(const char* filename, int attr);
+int createFileWrapper(const char *filename, int attr);
 int readFile1Wrapper(int handle, int count, int bufOffset);
 int readFile2Wrapper(int handle, int count, int bufOffset, int bufSegment);
 int writeFileAtRawWrapper(int handle, int count, int bufOffset, int bufSegment, int offsetAddend);
 
 int openFileWrapper(const char *filename, int mode) { /* Original: OpenFile(file, attrib). Open resident file service; returns a file handle. */
-    TRACE(("openFileWrapper: path=%s mode=%d", filename, mode));
+    Log(("openFileWrapper: path=%s mode=%d", filename, mode));
     /* Thin resident-service wrapper: pass filename and open mode unchanged. */
     return openFile(filename, mode);
 }
 
 // ==== seg000:0xdd5e ====
-int createFileWrapper(const char* filename, int attr) { /* Original: CreateFile(file). Create resident file service; returns a file handle/status. */
+int createFileWrapper(const char *filename, int attr) { /* Original: CreateFile(file). Create resident file service; returns a file handle/status. */
     /* attr is kept for the wrapper ABI; the resident create service uses it. */
     return createFile(filename, attr);
 }

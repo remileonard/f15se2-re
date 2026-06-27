@@ -9,7 +9,7 @@
 #include "egtypes.h"
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "slot.h"
 #include "const.h"
 #include "comm.h"
@@ -26,8 +26,7 @@ void selectMissile();
 void disableTextBlink(void);
 
 // ==== seg000:0xd260 ====
-int keyDispatch(uint16 scanCode)
-{
+void keyDispatch(uint16 scanCode) {
     char memStr[14]; /* local buffer at BP-0e, used by itoa for memory display */
 
     g_axisInputAccum[0] = g_axisInputAccum[1] = 0;
@@ -45,16 +44,16 @@ int keyDispatch(uint16 scanCode)
             g_radarScopeRange = 0;
         switch (g_radarScopeRange) {
         case 0:
-            strcpy(strBuf, (char *)aLong);
+            strcpy(strBuf, "Long");
             break;
         case 1:
-            strcpy(strBuf, (char *)aMedium);
+            strcpy(strBuf, "Medium");
             break;
         case 2:
-            strcpy(strBuf, (char *)aShort);
+            strcpy(strBuf, "Short");
             break;
         }
-        strcat(strBuf, (char *)aRangeRadar);
+        strcat(strBuf, " range radar");
         tempStrcpy(strBuf);
         break;
     case 0x2c7a:
@@ -73,7 +72,7 @@ int keyDispatch(uint16 scanCode)
         if (g_viewZ != g_groundAltitude) {
             *(char *)&g_playerPlaneFlags ^= 1;
             g_gearDownArmed = 0;
-            makeSound(0x20, 2);
+            makeSound(32, 2);
         }
         if (!(*(char *)&g_playerPlaneFlags & 1)) {
             exitSlowMotion();
@@ -84,7 +83,7 @@ int keyDispatch(uint16 scanCode)
         if (g_detailLevel < 0) {
             g_detailLevel = gfx_getModecode() == 3 ? 3 : 2;
         }
-        strcpy(strBuf, (char *)aDetailLevel);
+        strcpy(strBuf, "Detail Level ");
         strcat(strBuf, itoa(g_detailLevel, g_itoaScratch, 10));
         tempStrcpy(strBuf);
         setupLodDistances();
@@ -93,17 +92,17 @@ int keyDispatch(uint16 scanCode)
         g_kbdSensitivity++;
         if (g_kbdSensitivity > 2)
             g_kbdSensitivity = 0;
-        strcpy(strBuf, (char *)aKybdSensitivit);
+        strcpy(strBuf, "Kybd Sensitivity");
         strcat(strBuf, itoa(g_kbdSensitivity + 1, g_itoaScratch, 10));
         tempStrcpy(strBuf);
         break;
     case 0x3200:
-        strcpy(strBuf, (char *)aMemoryAvailabl);
+        strcpy(strBuf, "Memory Available:");
         strcat(strBuf, itoa(allocSize, memStr, 10));
         tempStrcpy(strBuf);
         break;
     case 0x2100:
-        strcpy(strBuf, (char *)aJiffiesFrame);
+        strcpy(strBuf, "Jiffies/Frame ");
         strcat(strBuf, itoa(g_jiffiesPerFrame, g_itoaScratch, 10));
         tempStrcpy(strBuf);
         break;
@@ -117,8 +116,11 @@ int keyDispatch(uint16 scanCode)
         }
         break;
     case 0x2f00:
+        /* The original source pre-increments in place (compiles to `inc [mem]`);
+         * keep this form for byte-exact match even though it is formally
+         * unsequenced. Both writes store the same final value, (old+1)&3. */
         g_axisInputAccum[2] = ++g_axisInputAccum[2] & 3;
-        strcpy(strBuf, (char *)aSounds);
+        strcpy(strBuf, "Sounds ");
         strcat(strBuf, itoa(3 - g_axisInputAccum[2], g_itoaScratch, 10));
         tempStrcpy(strBuf);
         updateEngineSound();
@@ -159,11 +161,11 @@ int keyDispatch(uint16 scanCode)
         g_directorMode++;
         if (g_directorMode > 2)
             g_directorMode = 0;
-        strcpy(strBuf, (char *)aDirector);
+        strcpy(strBuf, "Director ");
         if (g_directorMode != 0) {
             strcat(strBuf, itoa(g_directorMode, g_itoaScratch, 10));
         } else {
-            strcat(strBuf, (char *)aOff);
+            strcat(strBuf, "off");
         }
         tempStrcpy(strBuf);
         break;
@@ -173,13 +175,13 @@ int keyDispatch(uint16 scanCode)
             waypointIndex = 1;
         switch (waypointIndex) {
         case 1:
-            tempStrcpy((char *)aWaypointPrimar);
+            tempStrcpy("Waypoint: Primary Target");
             break;
         case 2:
-            tempStrcpy((char *)aWaypointSecond);
+            tempStrcpy("Waypoint: Secondary Target");
             break;
         case 3:
-            tempStrcpy((char *)aWaypointFriend);
+            tempStrcpy("Waypoint: Friendly Airbase");
             g_targetSlots[1].viewIndex = g_closestThreatIndex;
             break;
         }
@@ -187,10 +189,10 @@ int keyDispatch(uint16 scanCode)
     case 0x1970:
         if (g_autopilotAltitude != 0) {
             g_autopilotAltitude = 0;
-            tempStrcpy((char *)aAutopilotOff);
+            tempStrcpy("Autopilot off");
         } else {
             g_autopilotAltitude = g_viewZ < 1000 ? 1000 : g_viewZ;
-            tempStrcpy((char *)aAutopilotOn);
+            tempStrcpy("Autopilot on");
         }
         break;
     case 0x1474:
@@ -238,9 +240,8 @@ int keyDispatch(uint16 scanCode)
     case 0x11b:
         if (g_ejectState == 0) {
             makeSound(2, 2);
-            makeSound(0x22, 2);
-            if ((abs(g_ourRoll) >> 5) + (abs(g_ourPitch) >> 5) + g_knots
-                    > randomRange(500) + 500) {
+            makeSound(34, 2);
+            if ((abs((int16)g_ourRoll) >> 5) + (abs(g_ourPitch) >> 5) + g_knots > randomRange(500) + 500) {
                 finalizeMission(6);
             } else {
                 *(int far *)((char far *)commData + 0x26) = 2;
@@ -286,18 +287,20 @@ end_dispatch:
         g_fireCooldown = 4;
     }
 
-    switchIndicatorColor(3, (*(char *)&g_playerPlaneFlags & 1) ? 4
-        : (g_knots < 250 || (*(char *)&frameTick & 1)) ? 2 : 10);
+    switchIndicatorColor(3, (*(char *)&g_playerPlaneFlags & 1)             ? 4
+                            : (g_knots < 250 || (*(char *)&frameTick & 1)) ? 2
+                                                                           : 10);
 
     switchIndicatorColor(2, (*(char *)&g_playerPlaneFlags & 8) ? 14
-        : *(char *)&gfxModeUnset != 0 ? 3 : 2);
+                            : *(char *)&gfxModeUnset != 0      ? 3
+                                                               : 2);
 }
 
 // ==== seg000:0xd9db ====
 
 void selectMissile() {
     strcpy(strBuf, missiles[missleSpec[missileSpecIndex].weaponIdx].longName);
-    strcat(strBuf, (char *)(missleSpec[missileSpecIndex].ammo == 0 ? aNotAvailable : aArmed));
+    strcat(strBuf, missleSpec[missileSpecIndex].ammo == 0 ? " not available" : " armed");
     drawWeaponSelectMarker(missileSpecIndex);
     tempStrcpy(strBuf);
 }
@@ -346,7 +349,7 @@ void recalcTimeScale(void) {
 void setupLodDistances(void) {
     int lod;
     for (lod = 0; lod < 6; lod++) {
-        ((int *)(colorLut + 0x10))[lod] = 0x20 << ((char)lod + (char)(g_detailLevel > 2 ? 2 : g_detailLevel));
+        ((int16 *)(colorLut + 0x10))[lod] = 0x20 << ((char)lod + (char)(g_detailLevel > 2 ? 2 : g_detailLevel));
     }
     g_lodDistNear = g_lodDistScale + g_lodDistBase;
     g_lodDistFar = clampRange(g_lodDistScale << 1, 0x1000, 9999);

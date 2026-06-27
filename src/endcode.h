@@ -13,8 +13,8 @@ int writeFile(int handle, int a, int b, int c, int d);
 extern void far pollJoystick(void);
 void drawLineWrapper(void);
 void clearRect(int16 *page, int y1, int x1, int x2, int y2);
-void mystrcat(char *dst, char *src);
-void decodePicRaw(int handle, int segment);
+void mystrcat(char *dst, const char *src);
+void decodePicRaw(int handle, uint16 segment);
 extern void far copyJoystickData(uint8 far *data);
 
 #endif /* F15_SE2_ENDCODE */

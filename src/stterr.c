@@ -5,7 +5,7 @@
 #include "stterr.h"
 #include "pointers.h"
 #include "comm.h"
-#include "debug.h"
+#include "log.h"
 #include "const.h"
 
 #include <memory.h>
@@ -14,15 +14,15 @@
 #include <stdio.h>
 
 /* Private helpers for this translation unit. */
-unsigned long scaleCoordByLevel(int, unsigned long);
+uint32 scaleCoordByLevel(int, uint32);
 int lookupGridCell(int16, int16, int16);
 
-int16* findNearestTerrain(int32 worldX, int32 worldY) {
+struct NearestTerrain *findNearestTerrain(int32 worldX, int32 worldY) {
     int16 tmp, dx, dist, rowOff, x1, level, dy, i, cellIdx, gridX, offsetY, y1, cell;
     int16 sy;
     int16 ty;
     uint32 fx;
-    nearestDist = 0x7fff;
+    nearestTerrain.dist = 0x7fff;
     for (level = 1; level <= 2; level++) {
         for (i = 0; i < 9; i++) {
             fx = scaleCoordByLevel(level, worldX);
@@ -37,7 +37,7 @@ int16* findNearestTerrain(int32 worldX, int32 worldY) {
             tmp = gridLevelSize[rowOff] - dy + 0x800;
             y1 += rowOff;
             cell = lookupGridCell(level, gridX += dx, y1);
-            if (cell != 0xffff) {
+            if (cell != -1) {
                 tileDataPtr = terrainTilePtrs[level].entries[cell];
                 for (cellIdx = 0; terrainTileCounts[level].entries[cell] > cellIdx; cellIdx++) {
                     if (objectTypeTable[tileDataPtr->idx] != 0) {
@@ -46,21 +46,20 @@ int16* findNearestTerrain(int32 worldX, int32 worldY) {
                         dist = abs(ty) + abs(offsetY);
                         if (level == 1) {
                             dist >>= 2;
-                        }
-                        else {
+                        } else {
                             ty <<= 2;
                             offsetY <<= 2;
                         }
-                        if (dist < nearestDist) {
-                            nearestLevel = (int8)level;
-                            nearestCellIdx = (int8)cellIdx;
-                            nearestGridX = (int8)gridX;
-                            nearestGridY[0] = (int8)y1;
-                            nearestTilePtr = tileDataPtr;
-                            nearestObjectType = nearestTilePtr->idx;
-                            nearestDist = dist;
-                            nearestWorldX = ty + worldX;
-                            nearestWorldY = offsetY + worldY;
+                        if (dist < nearestTerrain.dist) {
+                            nearestTerrain.level = (int8)level;
+                            nearestTerrain.cellIdx = (int8)cellIdx;
+                            nearestTerrain.gridX = (int8)gridX;
+                            nearestTerrain.gridY = (int8)y1;
+                            nearestTerrain.tilePtr = tileDataPtr;
+                            nearestTerrain.objectType = nearestTerrain.tilePtr->idx;
+                            nearestTerrain.dist = dist;
+                            nearestTerrain.worldX = ty + worldX;
+                            nearestTerrain.worldY = offsetY + worldY;
                         }
                     }
                     tileDataPtr++;
@@ -68,10 +67,10 @@ int16* findNearestTerrain(int32 worldX, int32 worldY) {
             }
         }
     }
-    if (nearestDist != 0x7fff) {
-        return &nearestObjectType;
-    }
-    else return NULL;
+    if (nearestTerrain.dist != 0x7fff) {
+        return &nearestTerrain;
+    } else
+        return NULL;
 }
 
 uint32 scaleCoordByLevel(int level, uint32 coord) {
@@ -90,7 +89,7 @@ uint32 scaleCoordByLevel(int level, uint32 coord) {
 }
 
 int lookupGridCell(int16 level, int16 col, int16 row) {
-    if (col < 0 || row < 0 || col >= gridLevelSize[level + 6] || row >= gridLevelSize[level + 6])
+    if (col < 0 || row < 0 || col >= gridLevelSize[level + 3] || row >= gridLevelSize[level + 3])
         return -1;
     switch (level) {
     case 4:
@@ -105,4 +104,3 @@ int lookupGridCell(int16 level, int16 col, int16 row) {
         return gridBuf5[(col & 3) + (((row & 3) << 2) + (lookupGridCell(1, col >> 2, row >> 2) << 4))];
     }
 }
-

@@ -34,23 +34,23 @@
 #define GAMEDATA_SCORE_LO 0x32
 #define GAMEDATA_SCORE_HI 0x34
 #define GAMEDATA_THEATER 0x38
-#define COMM_UNK7 0x38  /* weaponType */
+#define COMM_UNK7 0x38 /* weaponType */
 #define GAMEDATA_FLAG4 0x3a
 #define COMM_UNK5 0x3a
 #define GAMEDATA_FLAG3 0x3c
 #define COMM_UNK6 0x3c
 #define COMM_BUFFER_DIFFICULTY 0x3e
 #define SEGMENT_BDA 0x40
-#define COMM_UNK8 0x40  /* weaponCount */
+#define COMM_UNK8 0x40 /* weaponCount */
 #define COMM_BUFFER_RAND 0x42
 #define GAMEDATA_UNK1 0x44
 #define COMM_JOYDATA_OFF 0x48
 #define COMM_BUFFER_FLAG1 0x4e
 #define COMM_USEJOY_OFF 0x72
 #define COMM_GFXMODE_OFFSET 0x78
-#define TIMEOUT_MPS 0x78
+#define TIMEOUT_MPS 120
 #define BDA_EGASW 0x88
-#define TIMEOUT_ADV 0xb4
+#define TIMEOUT_ADV 180
 #define BDA_CRTC 0x463
 #define DOS_PRINT_STR 0x9
 #define DOS_ERROR_RMDIR 0x10
@@ -61,12 +61,12 @@
 #define IRQ_KBD 0x16
 #define IRQ_TIME 0x1a
 #define IRQ_CBREAK 0x1b
-#define HALLFAME_RECORDSZ 0x20
+#define HALLFAME_RECORDSZ 32
 #define IRQ_DOS 0x21
 #define PORT_PIT_TIME0 0x40
 #define PORT_PIT_CNTRL 0x43
-#define SCREEN_MAXY 0xc7
-#define SCREEN_MAXX 0x13f
+#define SCREEN_MAXY 199
+#define SCREEN_MAXX 319
 #define FILE_READBUF_SIZE 0x200
 
 #endif /* F15_SE2_STTYPES */

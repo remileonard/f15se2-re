@@ -15,7 +15,7 @@
 #include "egui.h"
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "slot.h"
 #include "const.h"
 
@@ -32,7 +32,7 @@
 /* Private helpers for this translation unit. */
 void drawTargetBox(int, int, int, int);
 void drawMissileLock(void);
-void __cdecl drawTargetLabel(char *, int, int);
+void __cdecl drawTargetLabel(const char *, int, int);
 void buildRangeString(int rangeRaw);
 void projectWorldToHud(int worldX, int worldY, int worldZ);
 long rotateVectorComponent(int axis, int vecX, int vecY, int vecZ);
@@ -40,13 +40,11 @@ int computeMapTargetRange(int targetIdx);
 int computeSimObjectRange(int objIdx);
 int computeTargetBearing(int targetX, int targetY, int wantBearing);
 
-
 void projectWorldToHud(int worldX, int worldY, int worldZ);
 long rotateVectorComponent(int axis, int vecX, int vecY, int vecZ);
 int computeMapTargetRange(int targetIdx);
 int computeSimObjectRange(int objIdx);
 int computeTargetBearing(int targetX, int targetY, int wantBearing);
-
 
 // ==== seg000:0xc488 ====
 void projectWorldToHud(int worldX, int worldY, int worldZ) {
@@ -86,14 +84,14 @@ void projectWorldToHud(int worldX, int worldY, int worldZ) {
         return;
     }
 
-    vtxScratch.vproj.x.lo = (int)((camX << 8) / camDepth) + 0xa0;
+    vtxScratch.vproj.x.lo = (int)((camX << 8) / camDepth) + 160;
     vtxScratch.vproj.y.lo = (int)((camY << 8) / camDepth);
     vtxScratch.vproj.y.lo -= vtxScratch.vproj.y.lo >> 1 >> 1;
-    vtxScratch.vproj.y.lo += (g_pageFront[8] == 0xc7) ? 0x64 : 0x38;
+    vtxScratch.vproj.y.lo += (g_pageFront[8] == 199) ? 100 : 56;
 
     g_projDepth = (int)(camDepth >> 3);
 
-    if (vtxScratch.vproj.x.lo < 0 || vtxScratch.vproj.x.lo > 0x13f) {
+    if (vtxScratch.vproj.x.lo < 0 || vtxScratch.vproj.x.lo > 319) {
         g_offscreenProjX = vtxScratch.vproj.x.lo;
         vtxScratch.vproj.x.lo = -1;
     }
@@ -113,15 +111,10 @@ long rotateVectorComponent(int axis, int vecX, int vecY, int vecZ) {
     return sum;
 }
 
-
-
-
-
-int findWaypointEntry(int mapX, int mapY)
-{
+int findWaypointEntry(int mapX, int mapY) {
     int idx;
 
-    if (g_nearestTileObj = findNearestTileObject((int32)mapX << 5, (0x8000L - (int32)mapY) << 5)) {
+    if ((g_nearestTileObj = findNearestTileObject((int32)mapX << 5, (0x8000L - (int32)mapY) << 5))) {
         mapX = g_nearestTileObj->x >> 5;
         mapY = -((int)(g_nearestTileObj->y >> 5) - 0x8000);
         for (idx = 1; idx < g_planeCount; idx++) {
@@ -143,7 +136,7 @@ int findWaypointEntry(int mapX, int mapY)
 
 // ==== seg000:0xc7a2 ====
 int computeMapTargetRange(int targetIdx) {
-     return computeTargetBearing(g_planeTable.planes[targetIdx].mapX, g_planeTable.planes[targetIdx].mapY, 1);
+    return computeTargetBearing(g_planeTable.planes[targetIdx].mapX, g_planeTable.planes[targetIdx].mapY, 1);
 }
 
 // ==== seg000:0xc7c6 ====
@@ -161,8 +154,7 @@ int computeTargetBearing(int targetX, int targetY, int wantBearing) {
         g_targetBearing = computeBearing(-dx, dy);
     }
     g_targetRange = rangeApprox(dx, dy);
-    goto done;
-done:;
+    return g_targetRange;
 }
 
 // ==== seg000:0xc82d ====
@@ -183,5 +175,5 @@ int isTargetOverWater(int wpIdx) {
     int category;
 
     category = ((char *)g_shapeTargetCategory)[g_planeTable.planes[wpIdx].nameIndex & 0x7f] & 0x0f;
-    return (category == 0x0c || category == 9 || category == 0x0b) ? 1 : 0;
+    return (category == 12 || category == 9 || category == 11) ? 1 : 0;
 }

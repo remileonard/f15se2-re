@@ -1,11 +1,11 @@
 #include "f15util.h"
 #include "pointers.h"
-#include "output.h"
+#include "log.h"
 
 #include <stdio.h>
 
-void strcpyFar(const char* src, const uint16 destSegment, const uint16 destOffset, size_t size) {
-    char FAR *dest =(char FAR *)MK_FP(destSegment, destOffset);
+void strcpyFar(const char *src, const uint16 destSegment, const uint16 destOffset, size_t size) {
+    char FAR *dest = (char FAR *)MK_FP(destSegment, destOffset);
     while (size > 0 && *src != '\0') {
         *dest = *src;
         dest++;
@@ -14,7 +14,7 @@ void strcpyFar(const char* src, const uint16 destSegment, const uint16 destOffse
     }
 }
 
-void memcpyFar(const char* src, const uint16 destSegment, const uint16 destOffset, size_t size) {
+void memcpyFar(const char *src, const uint16 destSegment, const uint16 destOffset, size_t size) {
     uint8 FAR *dest = (uint8 FAR *)MK_FP(destSegment, destOffset);
     while (size > 0) {
         *dest = *src;
@@ -25,12 +25,12 @@ void memcpyFar(const char* src, const uint16 destSegment, const uint16 destOffse
 }
 
 void writeWordFar(const uint16 segment, const uint16 offset, const uint16 value) {
-    uint16 FAR *wordPtr  = (uint16 FAR *)MK_FP(segment, offset);
+    uint16 FAR *wordPtr = (uint16 FAR *)MK_FP(segment, offset);
     *wordPtr = value;
 }
 
 enum { BUFSIZE = 256 };
-int blitFileFar(const char* filename, const uint16 segment, const uint16 offset) {
+int blitFileFar(const char *filename, const uint16 segment, const uint16 offset) {
     uint8 FAR *dest = (uint8 FAR *)MK_FP(segment, offset);
     uint8 buffer[BUFSIZE];
     FILE *infile = NULL;
@@ -38,16 +38,16 @@ int blitFileFar(const char* filename, const uint16 segment, const uint16 offset)
     int err;
     infile = fopen(filename, "rb");
     if (infile == NULL) {
-        ERROR("Unable to open %s for reading");
+        LogError(("Unable to open %s for reading", filename));
         return 1;
     }
     while (!feof(infile)) {
         readsize = fread(buffer, 1, BUFSIZE, infile);
         if ((err = ferror(infile)) != 0) {
-            ERROR("Error reading from %s: %d", filename, err);
+            LogError(("Error reading from %s: %d", filename, err));
             return 2;
         }
-        DEBUG("read %u bytes, writing at %p", readsize, dest);
+        LogDebug(("read %u bytes, writing at %p", readsize, dest));
         i = 0;
         while (i < readsize) {
             *dest = buffer[i++];
@@ -57,7 +57,7 @@ int blitFileFar(const char* filename, const uint16 segment, const uint16 offset)
     return 0;
 }
 
-const char* sizeString(const size_t paragraphs) {
+const char *sizeString(const size_t paragraphs) {
     static char buffer[128];
     const uint32 bytes = ((uint32)paragraphs) * 16;
     sprintf(buffer, "%lu (0x%x/%up)", bytes, paragraphs, paragraphs);

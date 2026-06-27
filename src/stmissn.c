@@ -7,7 +7,7 @@
 #include "slot.h"
 #include "const.h"
 
-#include "debug.h"
+#include "log.h"
 #include "stcode.h"
 #include "stdata.h"
 #include "stgen.h"
@@ -22,23 +22,18 @@
 /* Private helpers for this translation unit. */
 void waitJoyKey(void);
 int joyOrKey();
-void drawLine(int16 *pageNum, int x1, int y1, int x2, int y2, int color);
-int missionMenuSelect(char **names, char **desc, char *title, int s);
+void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color);
+int missionMenuSelect(const char **names, const char **desc, const char *title, int s);
 void animateArm(int, int);
 void clearBriefing(void);
 
-
-/* stmissn.c - split from stinit.c (mission select), compiled /Gs /Zi */
-
-void clearKeybuf()
-{
+void clearKeybuf() {
     while (misc_checkKeyBuf() == 0) {
         misc_getKey();
     }
 }
 
-void waitJoyKey(void)
-{
+void waitJoyKey(void) {
     while (joyOrKey() == 0) {}
 }
 
@@ -56,7 +51,7 @@ int joyOrKey() {
     if (misc_checkKeyBuf() != 0) {
         return 0;
     }
-    // 5b6, alt-q hit check
+    // alt-q hit check
     if (misc_getKey() == KEYCODE_ALTQ) {
         cleanup();
         exit(0);
@@ -64,27 +59,19 @@ int joyOrKey() {
     return 1;
 }
 
-/* 0x5d5 */
-void waitMdaCgaStatus(int16 iter)
-{
-    /* 0x5e0 */
+void waitMdaCgaStatus(int16 iter) {
     while (iter-- != 0) {
-        /* 0x5e2 */
         if (commData->setupMono != 0) {
             while ((inp(PORT_MDA_STATUS) & MDA_STATUS_RETRACE) == 0) {}
             while ((inp(PORT_MDA_STATUS) & MDA_STATUS_RETRACE) != 0) {}
-        /* 0x60f */
-        }
-        else {
+        } else {
             while ((inp(PORT_CGA_STATUS) & CGA_STATUS_RETRACE) == 0) {}
             while ((inp(PORT_CGA_STATUS) & CGA_STATUS_RETRACE) != 0) {}
         }
-    /* 0x62f */
     }
-    /* 0x634 */
 }
 
-void drawLine(int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
+void drawLine(const int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
     gfx_setPageN(*pageNum);
     gfx_setColor(color);
     lineX1 = x1;
@@ -95,9 +82,7 @@ void drawLine(int16 *pageNum, int x1, int y1, int x2, int y2, int color) {
     gfx_nop23();
 }
 
-/* 0x674 */
-void showPic640(char* filename)
-{
+void showPic640(const char *filename) {
     int fileHandle;
     intRegs[1] = INT_VID_MODESET;
     intRegs[0] = MODE_640_350;
@@ -109,44 +94,40 @@ void showPic640(char* filename)
 }
 
 /* ---- merged from stmissn.c ---- */
-void missionSelect()
-{
+void missionSelect() {
     int index, count;
-    TRACE(("missionSelect(): entering"));
     gfx_setDac(1);
     gfx_setFadeSteps(0);
-    openShowPic(aWall_pic, *page1NumPtr);
-    TRACE(("missionSelect(): shown wall"));
+    openShowPic("Wall.Pic", *page1NumPtr);
     clearBriefing();
-    TRACE(("missionSelect(): cleared briefing"));
     nearmemset(scenarioFoundArr, 0, 5);
-    gameData->difficulty = missionMenuSelect(missDiffLevels, missDiffDesc, aDifficulty, gameData->difficulty);
-    TRACE(("missionSelect(): selected difficulty: %d", gameData->difficulty));
+    gameData->difficulty = missionMenuSelect(missDiffLevels, missDiffDesc, "DIFFICULTY", gameData->difficulty);
+    Log(("missionSelect(): selected difficulty: %d", gameData->difficulty));
 selectTheater:
     if (gameData->theater > 4)
         gameData->theater = 4;
     checkDiskA();
     nearmemset(scenarioFoundArr, 0, 5);
-    gameData->theater = missionMenuSelect(missTheaNames, missTheaDesc, aTheater, gameData->theater);
-    if (gameData->theater == THEATER_OTHER) { // other scenario selected
+    gameData->theater = missionMenuSelect(missTheaNames, missTheaDesc, "THEATER", gameData->theater);
+    if (gameData->theater == THEATER_OTHER) {            // other scenario selected
         for (count = 4, index = 0; index < 4; index++) { // find extra scenarios
             plh3d3Ptr[0] = *scenarioCodePtr[index];
             plh3d3Ptr[1] = *(scenarioCodePtr[index] + 1);
 
-            if ((scenarioFoundArr[index] = ((fileHandle = fopen(plh3d3Ptr, aRb_1)) == NULL))) count--;
+            if ((scenarioFoundArr[index] = ((fileHandle = fopen(plh3d3Ptr, "rb")) == NULL))) count--;
             fclose(fileHandle);
         }
         if (count == 0) { // no scenarios found, print message and go back to previous screen
             clearBriefing();
-            drawStringCentered(page1NumPtr, aNoScenarioFile, 0x71, 0x3c, 0xb9);
-            drawStringCentered(page1NumPtr, aSeeTechnicalSu, 0x71, 0x48, 0xb9);
+            drawStringCentered(page1NumPtr, "No scenario files found", 113, 60, 185);
+            drawStringCentered(page1NumPtr, "See Technical Supplement", 113, 72, 185);
             enableHighlight = 0;
             timerCounter3 = 6;
             animateArm(armPosition, armPosition);
             waitJoyKey();
             goto selectTheater;
         }
-        gameData->theater = missionMenuSelect(missScenarioNames, missScenarioDesc, aTheater, 0) + 4;
+        gameData->theater = missionMenuSelect(missScenarioNames, missScenarioDesc, "THEATER", 0) + 4;
         if (gameData->theater == 8) {
             goto selectTheater;
         }
@@ -156,7 +137,7 @@ selectTheater:
     if (gameData->theater == THEATER_DS && gameData->difficulty != DIFFICULTY_DEMO) {
         scenarioFoundArr[0] = scenarioFoundArr[1] = 0;
         scenarioFoundArr[2] = scenarioFoundArr[3] = scenarioFoundArr[4] = 1;
-        if (missionMenuSelect(missTypeNames, missTypeDesc, aMissionType, 0) == 0) {
+        if (missionMenuSelect(missTypeNames, missTypeDesc, "MISSION TYPE", 0) == 0) {
             nearmemset(scenarioFoundArr, 0, 5);
 
             do {
@@ -164,18 +145,16 @@ selectTheater:
             } while ((missionPick = missionMenuSelect(missHistorical2Names, missHistorical2Desc, missionStr, 4) + 4) == 8);
         }
     }
-    // 909-0x90d
 }
 
-int missionMenuSelect(char **names, char **desc, char *title, int selection)
-{
+int missionMenuSelect(const char **names, const char **desc, const char *title, int selection) {
     int yPos, row, action;
-    TRACE(("missionMenuSelect(): entering, selection %d", selection));
+    Log(("missionMenuSelect(): entering, selection %d", selection));
     enableHighlight = 1;
     page1Desc.color = COLOR_TITLE;
     drawStringCentered(page1NumPtr, title, 113, 14, 185);
     drawLine(page1NumPtr, 173, 22, 235, 22, 1);
-    TRACE(("missionMenuSelect(): drawn title %s", title));
+    Log(("missionMenuSelect(): drawn title %s", title));
     yPos = 26;
     for (row = 0; row < 5; row++) {
         if (scenarioFoundArr[row] == 0) {
@@ -184,21 +163,20 @@ int missionMenuSelect(char **names, char **desc, char *title, int selection)
             page1Desc.font = FONT_SMALL;
             page1Desc.color = COLOR_BRIEF_DESC_NORMAL;
             drawStringCentered(page1NumPtr, desc[row], 113, yPos + 8, 185);
-            TRACE(("missionMenuSelect(): drawn item %s/%s", names[row], desc[row]));
+            Log(("missionMenuSelect(): drawn item %s/%s", names[row], desc[row]));
             page1Desc.font = FONT_NORMAL;
         }
         yPos += 21;
     }
-    TRACE(("missionMenuSelect(): items drawn: %d", row));
+    Log(("missionMenuSelect(): items drawn: %d", row));
     setTimerIrqHandler();
     timerCounter3 = 6;
     animateArm(-1, 6);
     for (row = 5; row >= selection; row--) {
         animateArm(row + 1, row);
     }
-    TRACE(("missionMenuSelect(): animated arm"));
     do {
-again:
+    again:
         if ((action = pollMenuInput()) != KEYCODE_ENTER) {
             if (action == KEYCODE_UPARROW) {
                 if (selection > 0) {
@@ -206,8 +184,7 @@ again:
                     animateArm(selection, selection - 1);
                     selection--;
                 }
-            }
-            else if (action == KEYCODE_DNARROW && selection < 4) {
+            } else if (action == KEYCODE_DNARROW && selection < 4) {
                 timerCounter3 = 6;
                 animateArm(selection, selection + 1);
                 selection++;
@@ -225,19 +202,18 @@ again:
     return selection;
 }
 
-void animateArm(int a, int b)
-{
+void animateArm(int a, int b) {
     int spriteIdx;
     while (timerCounter3 < 6) {}
     timerCounter3 = 0;
     armPosition = b;
     spriteIdx = armSpriteIndex[b];
     if (a == -1) {
-        gfx_copyRect(*page1NumPtr, 0, 0, *page2NumPtr, 0, 0 , SCREEN_WIDTH, SCREEN_HEIGHT);
+        gfx_copyRect(*page1NumPtr, 0, 0, *page2NumPtr, 0, 0, SCREEN_WIDTH, SCREEN_HEIGHT);
     }
     if (b != -1) {
         if (b < 5 && enableHighlight != 0) {
-            gfx_switchColor(page1NumPtr, 113, b * 21 + 0x22, 297, b * 21 + 0x2a, COLOR_BRIEF_DESC_NORMAL, COLOR_BRIEF_DESC_HL);
+            gfx_switchColor(page1NumPtr, 113, b * 21 + 34, 297, b * 21 + 42, COLOR_BRIEF_DESC_NORMAL, COLOR_BRIEF_DESC_HL);
         }
         showSprite(*page1NumPtr, armBlitX[spriteIdx], armBlitY[spriteIdx], armSrcX[spriteIdx], armSrcY[spriteIdx], armBlitW[spriteIdx], armBlitH[spriteIdx]);
     }
@@ -250,15 +226,14 @@ void animateArm(int a, int b)
         } else {
             gfx_copyRect(*page2NumPtr, spriteBlitX, spriteBlitY, *page1NumPtr, spriteBlitX, spriteBlitY, spriteBlitW, spriteBlitH);
             if (a < 5 && enableHighlight != 0) {
-                gfx_switchColor(page1NumPtr, 113, (21 * a) + 0x22, 297, (21 * a) + 0x2a, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
+                gfx_switchColor(page1NumPtr, 113, (21 * a) + 34, 297, (21 * a) + 42, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
             }
         }
         spriteBlitX = armBlitX[spriteIdx];
         spriteBlitY = armBlitY[spriteIdx];
         spriteBlitW = armBlitW[spriteIdx];
         spriteBlitH = armBlitH[spriteIdx];
-    }
-    else {
+    } else {
         gfx_setPageN(0);
         gfx_blitToCurrent(page1Ptr);
         spriteBlitX = armBlitX[spriteIdx];
@@ -267,15 +242,15 @@ void animateArm(int a, int b)
         spriteBlitH = armBlitH[spriteIdx];
         gfx_copyRect(*page2NumPtr, spriteBlitX, spriteBlitY, *page1NumPtr, spriteBlitX, spriteBlitY, spriteBlitW, spriteBlitH);
         if (b < 5 && enableHighlight != 0) {
-            gfx_switchColor(page1NumPtr, 113, b * 21 + 0x22, 297, b * 21 + 0x2a, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
-        } //cd9
+            gfx_switchColor(page1NumPtr, 113, b * 21 + 34, 297, b * 21 + 42, COLOR_BRIEF_DESC_HL, COLOR_BRIEF_DESC_NORMAL);
+        }
     }
 }
 
 int askRepeatMission() {
     char keycode;
     page1Desc.color = COLOR_BRIEF_DESC_HL;
-    drawStringCentered(page1NumPtr, aRepeatLastMiss, 0x71, 0x42, 0xb9);
+    drawStringCentered(page1NumPtr, "Repeat last mission ? (y/n)", 113, 66, 185);
     enableHighlight = 0;
     timerCounter3 = 6;
     animateArm(armPosition, armPosition);
@@ -288,11 +263,11 @@ int askRepeatMission() {
 }
 
 void checkDiskA() {
-    while ((fileHandle = fopen(aF15_spr_1, aRb_2)) == NULL) {
+    while ((fileHandle = fopen("F15.spr", "rb")) == NULL) {
         clearBriefing();
-        drawStringCentered(page1NumPtr, aPleaseReinsert, 0x71, 0x3d, 0xb9);
+        drawStringCentered(page1NumPtr, "Please reinsert F15 Disk A", 113, 61, 185);
         page1NumPtr[6] = FONT_SMALL; // page1Desc.font?
-        drawStringCentered(page1NumPtr, aPressSelectorW, 0x71, 0x49, 0xb9);
+        drawStringCentered(page1NumPtr, "<Press selector when ready>", 113, 73, 185);
         page1NumPtr[6] = FONT_NORMAL;
         enableHighlight = 0;
         timerCounter3 = 6;
@@ -305,7 +280,7 @@ void checkDiskA() {
 
 void missionDecode() {
     page1Desc.color = COLOR_BRIEF_DESC_NORMAL;
-    drawStringCentered(page1NumPtr, aDecodingMissio, 0x71, 0x42, 0xb9);
+    drawStringCentered(page1NumPtr, "decoding mission...", 113, 66, 185);
     enableHighlight = 0;
     timerCounter3 = 6;
     animateArm(armPosition, armPosition);
@@ -315,39 +290,39 @@ void printMission() {
     int armStep;
     clearBriefing();
     page1Desc.color = COLOR_TITLE;
-    drawStringCentered(page1NumPtr, aTodaySMission, 0x71, 0x0e, 0xb9);
-    drawLine(page1NumPtr, 0xa0, 0x16, 0xf9, 0x16, 1);
-    drawStringAt(page1NumPtr, aTakeoffFrom, 0x82, 0x20);
+    drawStringCentered(page1NumPtr, "TODAY'S MISSION", 113, 14, 185);
+    drawLine(page1NumPtr, 160, 22, 249, 22, 1);
+    drawStringAt(page1NumPtr, "Takeoff from:", 130, 32);
     page1Desc.color = COLOR_BRIEF_DESC_HL;
     buildTargetLabel(targets[0].baseIdx);
-    drawStringCentered(page1NumPtr, todayMissStrBuf, 0x71, 0x2a, 0xb9);
-    mystrcpy(todayMissStrBuf, aOnc_2);
+    drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 42, 185);
+    mystrcpy(todayMissStrBuf, "ONC ");
     mystrcat(todayMissStrBuf, getItemCoordStr(targets[0].baseIdx));
     page1Desc.font = FONT_SMALL;
     page1Desc.color = COLOR_COORDS;
-    drawStringCentered(page1NumPtr, todayMissStrBuf, 0x71, 0x34, 0xb9);
+    drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 52, 185);
     page1Desc.font = FONT_NORMAL;
     page1Desc.color = COLOR_TITLE;
-    drawStringAt(page1NumPtr, aPrimaryTarget, 0x82, 0x40);
+    drawStringAt(page1NumPtr, "Primary Target:", 130, 64);
     page1Desc.color = COLOR_BRIEF_DESC_HL;
     buildTargetLabel(targets[0].targetIdx);
-    drawStringCentered(page1NumPtr, todayMissStrBuf, 0x71, 0x4a, 0xb9);
+    drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 74, 185);
     page1Desc.font = FONT_SMALL;
     page1Desc.color = COLOR_COORDS;
-    mystrcpy(todayMissStrBuf, aOnc_0);
+    mystrcpy(todayMissStrBuf, "ONC ");
     mystrcat(todayMissStrBuf, targets[0].coord);
-    drawStringCentered(page1NumPtr, todayMissStrBuf, 0x71, 0x54, 0xb9);
+    drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 84, 185);
     page1Desc.font = FONT_NORMAL;
     page1Desc.color = COLOR_TITLE;
-    drawStringAt(page1NumPtr, aSecondaryTarge, 0x82, 0x60);
+    drawStringAt(page1NumPtr, "Secondary Target:", 130, 96);
     page1Desc.color = COLOR_BRIEF_DESC_HL;
     buildTargetLabel(targets[1].targetIdx);
-    drawStringCentered(page1NumPtr, todayMissStrBuf, 0x71, 0x6a, 0xb9);
+    drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 106, 185);
     page1Desc.font = FONT_SMALL;
     page1Desc.color = COLOR_COORDS;
-    mystrcpy(todayMissStrBuf, aOnc_1);
+    mystrcpy(todayMissStrBuf, "ONC ");
     mystrcat(todayMissStrBuf, targets[1].coord);
-    drawStringCentered(page1NumPtr, todayMissStrBuf, 0x71, 0x74, 0xb9);
+    drawStringCentered(page1NumPtr, todayMissStrBuf, 113, 116, 185);
     page1Desc.font = FONT_NORMAL;
     enableHighlight = 0;
     setTimerIrqHandler();
@@ -372,7 +347,7 @@ printMissionAgain:
         }
         goto printMissionAgain;
     }
-    for (;armStep <= 5; armStep++) {
+    for (; armStep <= 5; armStep++) {
         animateArm(armStep, armStep + 1);
     }
 
@@ -387,38 +362,30 @@ int pollMenuInput() {
     int joy0;
     joy0 = joy1 = 0;
     repeatHold = 0;
-    TRACE(("pollMenuInput(): entering"));
     if (joyRepeatFlag == 1) {
         timerCounter = 0;
         repeatHold = 1;
     }
-    if (commData->setupUseJoy == 1) { //10d8
-        TRACE(("pollMenuInput(): use joy 1"));
+    if (commData->setupUseJoy == 1) {
         joy0 = misc_readJoystick(0);
         joy1 = misc_readJoystick(1);
         pollJoystick();
     }
-    while ((misc_checkKeyBuf() != 0 && joy0 == 0 && joy1 == 0
-        && joyAxes[0] >= JOY_DEADZONE_LO && joyAxes[0] <= JOY_DEADZONE_HI
-        && joyAxes[1] >= JOY_DEADZONE_LO && joyAxes[1] <= JOY_DEADZONE_HI)
-        || repeatHold == 1) {
+    while ((misc_checkKeyBuf() != 0 && joy0 == 0 && joy1 == 0 && joyAxes[0] >= JOY_DEADZONE_LO && joyAxes[0] <= JOY_DEADZONE_HI && joyAxes[1] >= JOY_DEADZONE_LO && joyAxes[1] <= JOY_DEADZONE_HI) || repeatHold == 1) {
         // XXX: case study for instruction skipping in mzdiff, change above while condition to true and uncomment, run mzdiff with refskip 1 tgtskip 2 to repro
         // if ((((((misc_checkKeyBuf() == 0) || (var_2 != 0)) || (var_4 != 0)) ||
         //     ((joyAxes[0] < 0x4e || (joyAxes[0] > 0xb2)))) ||
         //     ((joyAxes[1] < 0x4e || (joyAxes[1] > 0xb2)))) && (var_6 != 1)) break;
-        if ((joyRepeatFlag == 1) && (0xf < timerCounter)) { //113f
-            TRACE(("pollMenuInput(): cond 1"));
+        if ((joyRepeatFlag == 1) && (15 < timerCounter)) { // 113f
             repeatHold = 0;
             joyRepeatFlag = 0;
         }
         if (commData->setupUseJoy == 1) {
-            TRACE(("pollMenuInput(): use joy 2"));
             joy0 = misc_readJoystick(0);
             joy1 = misc_readJoystick(1);
             pollJoystick();
         }
         if (cbreakHit != 0) {
-            TRACE(("pollMenuInput(): cbreak"));
             cleanup();
             restoreCbreakHandler();
             exit(0);
@@ -426,51 +393,38 @@ int pollMenuInput() {
         // blink cursor on top of current pilot selection
         blinkPilot();
     }
-    TRACE(("pollMenuInput(): out of while"));
     if (misc_checkKeyBuf() == 0) {
         key = misc_getKey();
-        TRACE(("pollMenuInput(): got key 0x%x", key));
-    }
-    else if (joy0 == 1) {
-        TRACE(("pollMenuInput(): setting enter"));
+        Log(("pollMenuInput(): got key 0x%x", key));
+    } else if (joy0 == 1) {
         key = KEYCODE_ENTER;
-    }
-    else if (joyAxes[1] < JOY_DEADZONE_LO) {
-        TRACE(("pollMenuInput(): joy up"));
+    } else if (joyAxes[1] < JOY_DEADZONE_LO) {
         key = KEYCODE_UPARROW;
         joyRepeatFlag = 1;
-    }
-    else if (joyAxes[1] > JOY_DEADZONE_HI) {
-        TRACE(("pollMenuInput(): joy dn"));
+    } else if (joyAxes[1] > JOY_DEADZONE_HI) {
         key = KEYCODE_DNARROW;
         joyRepeatFlag = 1;
-    }
-    else if (joyAxes[0] < JOY_DEADZONE_LO) {
-        TRACE(("pollMenuInput(): joy left"));
+    } else if (joyAxes[0] < JOY_DEADZONE_LO) {
         key = KEYCODE_LEFTARROW;
         joyRepeatFlag = 1;
-    }
-    else if (joyAxes[0] > JOY_DEADZONE_HI) {
-        TRACE(("pollMenuInput(): joy right"));
+    } else if (joyAxes[0] > JOY_DEADZONE_HI) {
         key = KEYCODE_RIGHTARROW;
         joyRepeatFlag = 1;
     }
-    if (((uint8*)&key)[0]) {
+    if (((uint8 *)&key)[0]) {
         key = key & 0xff;
-        TRACE(("pollMenuInput(): anded to %u", key));
+        Log(("pollMenuInput(): anded to %u", key));
     }
     if (key == KEYCODE_ALTQ) {
-        TRACE(("pollMenuInput(): exiting"));
         cleanup();
         restoreCbreakHandler();
         exit(0);
     }
-    TRACE(("pollMenuInput(): tail returning 0x%x", key));
+    Log(("pollMenuInput(): tail returning 0x%x", key));
     return key;
 }
 
-void clearBriefing(void)
-{
+void clearBriefing(void) {
     // clear briefing board
     clearRect(page1NumPtr, 113, 13, 297, 126);
 }

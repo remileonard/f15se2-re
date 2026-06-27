@@ -11,13 +11,12 @@
 #include "egtypes.h"
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "slot.h"
 #include "const.h"
 
 #include <dos.h>
 #include <memory.h>
-
 
 // ==== seg000:0xc8de ====
 
@@ -25,38 +24,31 @@ void load15Flt3d3() {
     int bytesLeft, chunkSize;
     struct SREGS segs;
     char FAR *dest;
-    TRACE(("load15Flt3d3: a15flt_xxx=%s", a15flt_xxx));
-    strcpyFromDot(a15flt_xxx, a_3d3_0);
-    TRACE(("load15Flt3d3: after strcpyFromDot=%s", a15flt_xxx));
-    fileHandle = fopen(a15flt_xxx, aRb_4);
-    TRACE(("load15Flt3d3: fopen returned %d", (int)fileHandle));
+    strcpyFromDot(a15flt_xxx, ".3D3");
+    fileHandle = fopen(a15flt_xxx, "rb");
     if (fileHandle == NULL) {
-        printError(aOpenErrorOn_3d3_0);
+        printError("Open Error on *.3D3");
         return;
     }
     fread(&flt15HeaderWord, 2, 1, fileHandle);
     fread(&flt15_size, 2, 1, fileHandle);
     fread(flt15_buf1, 2, flt15_size, fileHandle);
     fread(&bytesLeft, 2, 1, fileHandle);
-    TRACE(("load15Flt3d3: var_A=%d", bytesLeft));
     segread(&segs);
     dest = g_aircraftModels;
-    TRACE(("load15Flt3d3: DS=%04x var_10=%04x:%04x", segs.ds, FP_SEG(dest), FP_OFF(dest)));
-    while(bytesLeft > 0) {
+    Log(("load15Flt3d3: DS=%04x var_10=%04x:%04x", segs.ds, FP_SEG(dest), FP_OFF(dest)));
+    while (bytesLeft > 0) {
         chunkSize = bytesLeft <= 0x800 ? bytesLeft : 0x800;
         fread(flt15_buf2, 1, chunkSize, fileHandle);
-        movedata(segs.ds, (uint16)flt15_buf2, FP_SEG(dest), FP_OFF(dest), chunkSize);
+        movedata(segs.ds, PTR_OFF(flt15_buf2), FP_SEG(dest), FP_OFF(dest), chunkSize);
         bytesLeft -= 0x800;
         FP_OFF(dest) += 0x800;
     }
-    TRACE(("load15Flt3d3: loop done"));
     fclose(fileHandle);
-    TRACE(("load15Flt3d3: done"));
 }
 
-void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int objYaw, int objPitch, int objRoll, int scaleShift)
-{
-    int drawPg;
+void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int objYaw, int objPitch, int objRoll, int scaleShift) {
+    int16 *drawPg;
     int dataOff;
     long relX;
     long relY;
@@ -64,7 +56,7 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
     int shiftAmt;
 
     dataOff = shapeDataOffset(shapeId);
-    drawPg = (g_drawPage == 0) ? (int)g_pageFront : (int)g_pageBack;
+    drawPg = (g_drawPage == 0) ? g_pageFront : g_pageBack;
     relX = worldX - g_ViewX;
     relY = worldY + g_ViewY - 0x01000000L;
     altDiff = altitude - g_viewZ;
@@ -85,18 +77,17 @@ void drawWorldObject(int shapeId, long worldX, long worldY, int altitude, int ob
         shiftLongRightInPlace(shiftAmt, &relY);
         altDiff >>= (char)shiftAmt;
     }
-    if ((long)(int)labs(relX) < (long)0x7FFF) {
-        if ((long)(int)labs(relY) < (long)0x7FFF) {
+    if ((long)(int16)labs(relX) < (long)0x7FFF) {
+        if ((long)(int16)labs(relY) < (long)0x7FFF) {
             setViewPosition(0, 0, -altDiff);
             g_curLod = 1;
-            projectSceneObject(g_world3dData + dataOff, -objYaw, objPitch, objRoll, (int)relX, -(int)relY, altitude != 0);
+            projectSceneObject(g_world3dData + dataOff, -objYaw, objPitch, objRoll, (int16)relX, -(int16)relY, altitude != 0);
         }
     }
 }
 
 // ==== seg000:0xcb42 ====
-void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYaw, int objPitch, int objRoll, int mode, int shift)
-{
+void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYaw, int objPitch, int objRoll, int mode, int shift) {
     int unused;
     int horizonY;
     int bearing;
@@ -114,7 +105,7 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
     char categoryLow;
 
     g_targetInHudFlag = 1;
-    if (mode == 1 && g_detailLevel == 0 && *(char*)&gfxModeUnset != 0 && (frameTick & 3) != 0) {
+    if (mode == 1 && g_detailLevel == 0 && *(char *)&gfxModeUnset != 0 && (frameTick & 3) != 0) {
         return;
     }
 
@@ -136,7 +127,7 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
 
         if (mode == 1) {
             g_trkRange = range;
-            g_trkSize = (range >> 4) + 0x190;
+            g_trkSize = (range >> 4) + 400;
             g_trkScale = (g_trkSize << 5) / (range + 1);
             range = g_trkSize << 2;
             g_trkBearing = bearing;
@@ -182,16 +173,16 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
         g_extraScaleShift = 2;
     }
     if (mode == 1 || mode == 3) {
-        horizonY = (int)((long)g_trkScale * (long)((int)g_trkPitch >> 2) >> 5) + 0x9c;
-        if (horizonY < 0x80 || (int)g_trkPitch < (int)0xe800) {
-            horizonY = 0x80;
+        horizonY = (int)((long)g_trkScale * (long)(g_trkPitch >> 2) >> 5) + 156;
+        if (horizonY < 128 || g_trkPitch < (int16)0xe800) {
+            horizonY = 128;
         }
-        if (horizonY > 0xb8 || (int)g_trkPitch > 0x1800) {
-            horizonY = 0xb8;
+        if (horizonY > 184 || g_trkPitch > 0x1800) {
+            horizonY = 184;
         }
-        *(g_targetViewParams + 2) = (int)colorLut[3];
-        if (horizonY != 0x80) {
-            fillSpanRect(g_targetViewParams, 0xe8, 0x80, 0x130, horizonY);
+        *(g_targetViewParams + 2) = colorLut[3];
+        if (horizonY != 128) {
+            fillSpanRect(g_targetViewParams, 232, 128, 304, horizonY);
         }
         colorIdx = g_world3dData[0x2f];
         category = (int)(signed char)g_shapeTargetCategory[shapeId & 0x7f];
@@ -199,36 +190,35 @@ void drawTargetView(int shapeId, int worldX, int worldY, int altitude, int objYa
             colorIdx = 8;
         }
         categoryLow = (char)(category & 0xf);
-        if (categoryLow == 0xc || categoryLow == 9 || categoryLow == 0xb) {
+        if (categoryLow == 12 || categoryLow == 9 || categoryLow == 11) {
             colorIdx = 1;
         }
-        *(g_targetViewParams + 2) = (int)colorLut[colorIdx];
-        if (horizonY != 0xb8) {
-            fillSpanRect(g_targetViewParams, 0xe8, horizonY, 0x130, 0xb8);
+        *(g_targetViewParams + 2) = colorLut[colorIdx];
+        if (horizonY != 184) {
+            fillSpanRect(g_targetViewParams, 232, horizonY, 304, 184);
         }
     }
 
     g_offscreenRender = 1;
-    setup3DTransform((char*)g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0);
+    setup3DTransform(g_targetViewParams, -g_trkBearing, g_trkPitch, g_trkRoll, 0, 0, 0, 0);
     projectSceneObject(g_world3dData + dataOff, -objYaw, objPitch, objRoll, relX, -relY, relZ);
     rasterize3DWorld();
     g_offscreenRender = 0;
 
     if (mode == 1) {
-        strcpy(strBuf, (char*)aBrg);
+        strcpy(strBuf, "BRG ");
         strcat(strBuf, itoa((unsigned int)g_trkBearing / 0xb6, g_itoaScratch, 10));
-        drawStringActivePage(strBuf, 0xf8, 0xb0, 0xf);
+        drawStringActivePage(strBuf, 248, 176, 0xf);
     }
     g_extraScaleShift = 0;
 }
 
 // ==== seg000:0xcf32 ====
-int shapeDataOffset(int shapeId)
-{
+int shapeDataOffset(int shapeId) {
     if (shapeId & 0x100) {
         return buf3d3[shapeId & 0x7f];
     }
-    return (int)(&g_aircraftModels[((int *)flt15_buf1)[shapeId]] - g_world3dData);
+    return (int)(&g_aircraftModels[((int16 *)flt15_buf1)[shapeId]] - g_world3dData);
 }
 
 // ==== seg000:0xcf64 clamp ====
@@ -291,8 +281,7 @@ int computeBearing(int deltaX, int deltaY) {
         numer = (long)abs(deltaY) << 0xe;
         denom = abs(deltaX);
         swapped = 1;
-    }
-    else {
+    } else {
         numer = (long)abs(deltaX) << 0xe;
         denom = abs(deltaY);
         swapped = 0;
@@ -304,13 +293,13 @@ int computeBearing(int deltaX, int deltaY) {
             result = swapped ? BEARING_EAST - angle : angle;
         else
             result = swapped ? angle + BEARING_EAST : BEARING_SOUTH - angle;
-    }
-    else {
+    } else {
         if (deltaY > 0)
             result = swapped ? angle + BEARING_WEST : -angle;
         else
             result = swapped ? BEARING_WEST - angle : angle + BEARING_SOUTH;
     }
+    return result;
 }
 
 // ==== seg000:0xd178 sinMul ====
@@ -350,8 +339,7 @@ int randomRange(int maxVal) { /* Original: rnd(Max). Deterministic ((long)Max * 
 }
 
 // ==== seg000:0xd21e ====
-int readAxisInput(int axisIdx)
-{
+int readAxisInput(int axisIdx) {
     int16 value;
 
     if (g_inputDisabled) {

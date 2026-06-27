@@ -3,7 +3,7 @@
 #include <dos.h>
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "shared/common.h"
 #include <stdlib.h>
 #include "endtypes.h"
@@ -28,8 +28,10 @@ int main(void) {
     int e;
     register int commSeg;
 
-    (void)a; (void)e;
+    (void)a;
+    (void)e;
 
+    log_set_app("end");
     FP_SEG(lowmemPtr) = SEG_LOWMEM;
     FP_OFF(lowmemPtr) = OFF_IACA_START;
     commSeg = *lowmemPtr;
@@ -73,7 +75,6 @@ int main(void) {
 }
 
 void checkQuitFlag(void) {
-    TRACE(("checkQuitFlag"));
     if (quitFlag != 0) {
         cleanup();
         restoreCbreakHandler();
@@ -83,8 +84,14 @@ void checkQuitFlag(void) {
 
 void initGraphics(void) {
     int a, b, c, d, e, f, g, h;
-    (void)a; (void)b; (void)c; (void)d;
-    (void)e; (void)f; (void)g; (void)h;
+    (void)a;
+    (void)b;
+    (void)c;
+    (void)d;
+    (void)e;
+    (void)f;
+    (void)g;
+    (void)h;
     seedRandom();
     gfx_setPageN(0);
     gfx_allocPage(0);

@@ -3,7 +3,7 @@
 #include <stdio.h>
 #include "offsets.h"
 #include "pointers.h"
-#include "debug.h"
+#include "log.h"
 #include "shared/common.h"
 #include "endata.h"
 #include "endcode.h"
@@ -14,33 +14,45 @@
 extern int16 menuItemUnused;
 extern char animExitFlag;
 
-void debriefMainLoop(void)
-{
-    char p[2]; int a; int b; int c; char d[3]; int e; char f[2]; int g; char h[2];
+void debriefMainLoop(void) {
+    char p[2];
+    int a;
+    int b;
+    int c;
+    char d[3];
+    int e;
+    char f[2];
+    int g;
+    char h[2];
 
-    p[0] = 0x0d; p[1] = 0;
-    d[0] = 9; d[1] = 0x0a; d[2] = 0;
-    h[0] = 0x8e; h[1] = 0;
-    f[0] = 0x8f; f[1] = 0;
+    p[0] = 0x0d;
+    p[1] = 0;
+    d[0] = 9;
+    d[1] = 0x0a;
+    d[2] = 0;
+    h[0] = 0x8e;
+    h[1] = 0;
+    f[0] = 0x8f;
+    f[1] = 0;
 
     goto open_theater;
 
 insert_scenario:
-    clearRect(debriefPage, 0, 0, 0x13f, 0xc7);
-    drawStringCentered(debriefPage, str_insertScenario, 0, 0x5a, 0x13f);
+    clearRect(debriefPage, 0, 0, 319, 199);
+    drawStringCentered(debriefPage, "Please insert scenario disk", 0, 90, 319);
     debriefPage[6] = 4;
-    drawStringCentered(debriefPage, str_pressKey1, 0, 0x64, 0x13f);
+    drawStringCentered(debriefPage, "<Press a key when ready>", 0, 100, 319);
     debriefPage[6] = 1;
     gfx_flipPage();
     misc_getKey();
 
 open_theater:
-    worldBufHandle = (int)fopen(theaterSprFiles[gameData->theater], str_modeRb1);
+    worldBufHandle = fopen(theaterSprFiles[gameData->theater], "rb");
     if (!worldBufHandle)
         goto insert_scenario;
 
     gfx_waitRetrace();
-    fclose((FILE *)worldBufHandle);
+    fclose(worldBufHandle);
     gfx_setFadeSteps(9);
     spriteBufSeg = allocBuffer(gfx_getBufSize());
     loadPic(theaterSprFiles[gameData->theater], spriteBufSeg);
@@ -49,23 +61,23 @@ open_theater:
     goto open_dbicons;
 
 insert_diska:
-    clearRect(debriefPage, 0, 0, 0x13f, 0xc7);
-    drawStringCentered(debriefPage, str_insertDiskA, 0, 0x5a, 0x13f);
+    clearRect(debriefPage, 0, 0, 319, 199);
+    drawStringCentered(debriefPage, "Please insert F15 Disk A", 0, 90, 319);
     debriefPage[6] = 4;
-    drawStringCentered(debriefPage, str_pressKey2, 0, 0x64, 0x13f);
+    drawStringCentered(debriefPage, "<Press a key when ready>", 0, 100, 319);
     debriefPage[6] = 1;
     gfx_flipPage();
     misc_getKey();
 
 open_dbicons:
-    worldBufHandle = (int)fopen(str_dbicons1, str_modeRb2);
+    worldBufHandle = fopen("dbicons.spr", "rb");
     if (!worldBufHandle)
         goto insert_diska;
 
     gfx_waitRetrace();
-    fclose((FILE *)worldBufHandle);
+    fclose(worldBufHandle);
     gfx_setFadeSteps(8);
-    openShowPic(str_dbicons2, 1);
+    openShowPic("dbicons.spr", 1);
 
     spriteMapAreaDef.bufPtr = a;
     spriteStatusBarDef.bufPtr = a;
@@ -81,19 +93,19 @@ open_dbicons:
     spriteWaypointBlinkDef.bufPtr = a;
 
     gfx_waitRetrace();
-    clearRect(debriefPage, 0, 0, 0x13f, 0xc7);
+    clearRect(debriefPage, 0, 0, 319, 199);
     gfx_blitSprite(spriteMapArea);
     gfx_blitSprite(spriteStatusBar);
 
     debriefPage[2] = 0;
-    drawStringAt(debriefPage, str_missionDebrief, 0x6a, 1);
+    drawStringAt(debriefPage, "  MISSION DEBRIEFING\0", 106, 1);
     debriefPage[2] = 6;
 
-    e = 0x96;
+    e = 150;
     c = 0;
     do {
-        drawStringAt(debriefPage, debriefMenuStrings[c], 0xec, e);
-        e += 0x0a;
+        drawStringAt(debriefPage, debriefMenuStrings[c], 236, e);
+        e += 10;
         c++;
     } while (c < 2);
 
@@ -107,7 +119,7 @@ open_dbicons:
 
     do {
         debriefMenuItems[g].state = 2;
-        processMenuItems(debriefMenuItems, menuItemUnused, 2, 0xfa, g * 10 + 0x97, debriefPage2);
+        processMenuItems(debriefMenuItems, menuItemUnused, 2, 250, g * 10 + 151, debriefPage2);
         g = selectMenuItem(debriefMenuItems, menuItemUnused, 2, cursorBoundsPtr, debriefPage2);
 
         switch (g) {
@@ -123,30 +135,27 @@ open_dbicons:
         }
 
         if (commData->setupUseJoy == 1) {
-            while (misc_readJoystick(0))
-                ;
+            while (misc_readJoystick(0));
             timerCounter = 0;
-            while (timerCounter <= 5)
-                ;
-            while (misc_readJoystick(0))
-                ;
+            while (timerCounter <= 5);
+            while (misc_readJoystick(0));
         }
     } while (b);
 
     restoreTimerIrqHandler();
     gfx_waitRetrace();
-    *(long *)&missionScore = calcMissionScore(totalFlightRecords);
+    missionScore = calcMissionScore(totalFlightRecords);
 
     gameData->hallOfFameEligible = 0;
 
     if (commData->trainingFlag == 0) {
         gameData->hallOfFameEligible = missionScore;
 
-        if ((unsigned long)gameData->lastScore < *(unsigned long *)&missionScore) {
+        if ((unsigned long)gameData->lastScore < (unsigned long)missionScore) {
             gameData->lastScore = missionScore;
         }
 
-        gameData->totalScore += *(long *)&missionScore;
+        gameData->totalScore += missionScore;
 
         if (commData->landingType == 1) {
             gameData->campaignProgress = 2;
