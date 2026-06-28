@@ -37,10 +37,10 @@ class LoaderTests(unittest.TestCase):
 
             terrain = load_3dt(path)
             self.assertEqual(terrain.signature, 0x3131)
-            self.assertEqual(terrain.category_sizes[0], 1)
+            self.assertEqual(terrain.lod_sizes[0], 1)
             self.assertEqual(terrain.tile_counts[0][0], 2)
-            self.assertEqual(terrain.categories[0][0].object_count, 2)
-            self.assertEqual(terrain.categories[0][0].objects[0].shape, 4)
+            self.assertEqual(terrain.lod[0][0].object_count, 2)
+            self.assertEqual(terrain.lod[0][0].objects[0].shape, 4)
 
     def test_load_3dg(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -97,8 +97,8 @@ class LoaderTests(unittest.TestCase):
 
             terrain = load_3dt(path)
             self.assertEqual(terrain.tile_counts[0][0], 1)
-            self.assertEqual(terrain.categories[0][0].object_count, 1)
-            self.assertEqual(terrain.categories[0][0].objects[0].shape, 4)
+            self.assertEqual(terrain.lod[0][0].object_count, 1)
+            self.assertEqual(terrain.lod[0][0].objects[0].shape, 4)
 
 
 if __name__ == "__main__":

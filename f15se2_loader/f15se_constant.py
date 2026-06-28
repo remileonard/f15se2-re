@@ -83,7 +83,7 @@ _TILE_GRID_DIM = [1024, 256, 64, 16, 4]  # index = LOD 0-4
 # g_theaterGrids (egdata.c): 8 theaters × 64-byte 8×8 top-LOD grid, read via
 #   memcpy(g_topLodGrid, g_theaterGrids + (theater & 7) * 64, 64).
 # process3dg(4, col, row) reads g_topLodGrid[(col+2) + (row+2)*8], so the visible
-# 4×4 background (rows/cols 2..5) is always categories 0x00..0x0F across theaters.
+# 4×4 background (rows/cols 2..5) is always lod 0x00..0x0F across theaters.
 _THEATER_GRIDS: list[list[int]] = [
     [  # theater 0
         0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10,
@@ -240,7 +240,7 @@ _DEFAULT_PALETTE: list[tuple[int, int, int]] = [
 ]
 
 # Per-tile-index fallback colors (used when no model data is loaded).
-# 0-15 = actual terrain categories; 0x10/0x11 = sea/out-of-bounds.
+# 0-15 = actual terrain lod; 0x10/0x11 = sea/out-of-bounds.
 _TILE_COLORS: list[tuple[int, int, int]] = [
     ( 80, 120,  255), (100, 145,  75), ( 70, 110,  50), ( 60, 100,  45),  # 0-3  grassland
     (130,  95,  55), (155, 115,  65), (175, 135,  85), (115,  95,  75),  # 4-7  dry/desert

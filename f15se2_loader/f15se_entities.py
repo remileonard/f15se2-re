@@ -25,19 +25,19 @@ class TerrainTile:
 class ThreeDTerrain:
     path: Path
     signature: int
-    category_sizes: list[int] = field(default_factory=list)
+    lod_sizes: list[int] = field(default_factory=list)
     tile_counts: list[list[int]] = field(default_factory=list)
-    categories: list[list[TerrainTile]] = field(default_factory=list)
+    lod: list[list[TerrainTile]] = field(default_factory=list)
 
     def summary(self) -> dict[str, object]:
-        tile_count = sum(len(category) for category in self.categories)
-        object_count = sum(sum(tile.object_count for tile in category) for category in self.categories)
+        tile_count = sum(len(category) for category in self.lod)
+        object_count = sum(sum(tile.object_count for tile in category) for category in self.lod)
         return {
             "path": str(self.path),
             "signature": self.signature,
-            "category_sizes": self.category_sizes,
+            "lod_sizes": self.lod_sizes,
             "tile_counts": self.tile_counts,
-            "category_count": len(self.categories),
+            "category_count": len(self.lod),
             "tile_count": tile_count,
             "object_count": object_count,
         }
@@ -48,12 +48,12 @@ class ThreeDTerrain:
             "3DT terrain",
             f"  path: {summary['path']}",
             f"  signature: 0x{summary['signature']:04x}",
-            f"  category_sizes: {summary['category_sizes']}",
-            f"  categories: {summary['category_count']}",
+            f"  lod_sizes: {summary['lod_sizes']}",
+            f"  lod: {summary['category_count']}",
             f"  tiles: {summary['tile_count']}",
             f"  objects: {summary['object_count']}",
         ]
-        for category_idx, category in enumerate(self.categories):
+        for category_idx, category in enumerate(self.lod):
             lines.append(f"  category {category_idx}: {len(category)} tiles")
             for tile_idx, tile in enumerate(category):
                 lines.append(

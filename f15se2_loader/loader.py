@@ -17,7 +17,6 @@ from f15se_entities import (
 from f15se_constant import (
     _AIRCRAFT_MODEL_IDS,
     _DEFAULT_PALETTE,
-    _TILE_COLORS,
     _LOD_DIM,
     _TILE_GRID_DIM,
     _THEATER_GRIDS,
@@ -227,8 +226,8 @@ def _show_world_viewer(
     #   vertex_screen_px = vertex_game_unit >> 2  →  MODEL_SCALE = CELL_SIZE/0x1000
     MODEL_SCALE = CELL_SIZE / 0x1000   # = 0.25  (game units → world units)
     FOV = 600.0            # perspective focal length (pixels)
-    NEAR = 1.0            # near-plane clip distance
-    VIEW_DIST_CELLS = 10   # render radius in cells
+    NEAR = 10           # near-plane clip distance
+    VIEW_DIST_CELLS = 100   # render radius in cells
     MOVE_SPEED = CELL_SIZE * 2
     TURN_SPEED = 1.5
 
@@ -359,9 +358,9 @@ def _show_world_viewer(
         # drawMapTiles(): LOD 4 (8×8 theater grid) is the always-present map
         # background, then LOD 3 / LOD 2 add coastline and inland detail on top.
         def _draw_tile_pass_3d(pass_lod: int) -> None:
-            if pass_lod >= len(terrain.categories):
+            if pass_lod >= len(terrain.lod):
                 return
-            cat = terrain.categories[pass_lod]
+            cat = terrain.lod[pass_lod]
             tdim = _TILE_GRID_DIM[pass_lod]
             tworld = (_LOD_DIM[lod] * CELL_SIZE) / tdim
             tscale = tworld / 0x1000
@@ -496,9 +495,9 @@ def _show_world_viewer(
 
         # Same coarse→fine LOD passes as the 3D view (LOD 4 background first).
         def _draw_tile_pass_2d(pass_lod: int) -> None:
-            if pass_lod >= len(terrain.categories):
+            if pass_lod >= len(terrain.lod):
                 return
-            cat = terrain.categories[pass_lod]
+            cat = terrain.lod[pass_lod]
             tdim = _TILE_GRID_DIM[pass_lod]
             tile_px = (dim * cell_px) / tdim
             tunits = tile_px / 0x1000

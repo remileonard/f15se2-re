@@ -114,20 +114,20 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
         raise ValueError(f"Unexpected 3DT signature 0x{signature:04x}")
 
     offset = 2
-    category_sizes = [_read_u16(data, offset + index * 2) for index in range(5)]
+    lod_sizes = [_read_u16(data, offset + index * 2) for index in range(5)]
     offset += 10
 
     # First loop: read all tile count arrays (matrix3dt in C) before any tile data
     tile_counts: list[list[int]] = []
-    for category_size in category_sizes:
-        if category_size > 32:
-            raise ValueError(f"Category size {category_size} exceeds 0x20")
-        counts = [_read_u16(data, offset + index * 2) for index in range(category_size)]
-        offset += category_size * 2
+    for lod_size in lod_sizes:
+        if lod_size > 32:
+            raise ValueError(f"Category size {lod_size} exceeds 0x20")
+        counts = [_read_u16(data, offset + index * 2) for index in range(lod_size)]
+        offset += lod_size * 2
         tile_counts.append(counts)
 
     # Second loop: read actual tile object data
-    categories: list[list[TerrainTile]] = []
+    lod: list[list[TerrainTile]] = []
     byte_offset = 0
     for counts in tile_counts:
         tiles: list[TerrainTile] = []
@@ -147,13 +147,13 @@ def load_3dt(path: PathLike) -> ThreeDTerrain:
                 objects.append(TileEntry(x=x, y=y, z=z, shape=shape & 0xFF))
                 byte_offset += TILE_OBJECT_SIZE
             tiles.append(TerrainTile(object_count=object_count, objects=objects))
-        categories.append(tiles)
+        lod.append(tiles)
     return ThreeDTerrain(
         path=path,
         signature=signature,
-        category_sizes=category_sizes,
+        lod_sizes=lod_sizes,
         tile_counts=tile_counts,
-        categories=categories,
+        lod=lod,
     )
 
 def load_3dg(path: PathLike) -> ThreeDGGrid:

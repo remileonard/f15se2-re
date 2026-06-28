@@ -779,7 +779,7 @@ Chaque objet pointe vers un modèle dans le `.3D3` via son champ `shape`.
 Offset  Taille      Champ
 ──────  ──────      ────────────────────────────────────────────────────────
 +0x00   2           signature  0x3131
-+0x02   5×2         category_sizes[]  nombre de tuiles par catégorie (≤ 32)
++0x02   5×2         lod_sizes[]  nombre de tuiles par catégorie (≤ 32)
 +0x0C   Σ(cat_size)×2  tile_counts[]   nombre d'objets par tuile, catégorie par catégorie
 +?      variable    tile_data[]      objets de tuile (7 octets chacun)
 ```
@@ -804,7 +804,7 @@ du fichier `.3D3`.
 ```python
 # Première passe : lire les comptes
 for category_idx in range(5):
-    for tile_idx in range(category_sizes[category_idx]):
+    for tile_idx in range(lod_sizes[category_idx]):
         tile_counts[category_idx][tile_idx] = read_u16()
 
 # Deuxième passe : lire les objets
@@ -892,7 +892,7 @@ Offset  Taille  Champ           Description
                │ targetFlags           ▼                      │
                │ occupantType      process_3dg             CE.3DT
                │     │              (col,row,lod)       ──────────────
-               │     │                  │               category_sizes
+               │     │                  │               lod_sizes
                │     ▼                  ▼               tile_counts[]
                │ aircraftTypes[]   category_idx         TerrainTile[]
                │    (modelId)           │                   shape ──►──┘
@@ -930,7 +930,7 @@ wld = load_wld("CE.WLD")
 
 # 5. Pour afficher une cellule de terrain (col, row) en LOD 3 :
 category_idx = process_3dg(grid, lod=3, col=col, row=row)
-tile = terrain.categories[3][category_idx]
+tile = terrain.lod[3][category_idx]
 for obj in tile.objects:
     shape_idx = obj.shape & 0x7F
     model = terrain_models.get(shape_idx)
