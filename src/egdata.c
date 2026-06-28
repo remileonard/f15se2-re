@@ -492,7 +492,10 @@ int16 g_inLandingCorridor = 1;
 int16 g_render3DTiles = 1;
 int16 g_landingDoneFlag = 1;
 uint16 g_frameRateAccum = 0;
-int16 g_slowMotionMode = 1;
+/* g_timeAccelMode: time-compression toggle (ALT+A). 1 = real time,
+   2 = accelerated (halves g_frameRateScaling so mission time advances
+   twice as fast; the tac map shows "ACCEL"). */
+int16 g_timeAccelMode = 1;
 int16 g_directorEventDeadline = -1;
 int g_directorMode = 0;
 int16 g_resupplyCount = 1;
@@ -1835,7 +1838,7 @@ struct BulletTrack bulletTracks[20];
 /* 3x3 rotation matrix scratch buffers (9 words): written by
  * multiplyMatrix3x3Far/buildRotationMatrixFar, read as [axis]/[3+axis]/[6+axis]. */
 int16 g_matrixScratch[9];
-int g_ourPitch = 0;
+int16 g_ourPitch = 0;
 /* 16-bit word-degree angles: arithmetic must wrap at 16 bits (e.g. 0x10000 - roll,
    -head). Keep these int16 so assignments wrap on store as the DOS build did. */
 int16 g_ourRoll = 0;

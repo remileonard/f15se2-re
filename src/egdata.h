@@ -93,7 +93,7 @@ extern int16 g_inLandingCorridor;
 extern int16 g_render3DTiles;
 extern int16 g_landingDoneFlag;
 extern uint16 g_frameRateAccum;
-extern int16 g_slowMotionMode;
+extern int16 g_timeAccelMode;
 extern int16 g_directorEventDeadline;
 extern int g_directorMode;
 extern int16 g_resupplyCount;
@@ -152,7 +152,7 @@ extern int16 g_pitchMatrix[9];
 extern int16 g_rollMatrix[9];
 extern int16 g_matrixScratch[];
 extern int16 g_ourHead;
-extern int g_ourPitch;
+extern int16 g_ourPitch;
 extern int16 g_ourRoll;
 /* g_viewZ: altitude-Z. int16 for most TUs; egtarget.c reads the same storage
    as uint16 (it #defines G_VIEWZ_UNSIGNED before including this header). */
