@@ -20,3 +20,7 @@ src/log.txt
 /*.grc
 build64/
 noasm_build/
+f15se2_loader/__pycache__/
+*.pyc
+f15se2_loader/.venv/
+f15se2_loader/*.sh
