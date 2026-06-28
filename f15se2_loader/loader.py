@@ -1,44 +1,39 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional, Union
-from f15se_helpers import _read_bytes, _read_u8, _read_u16, _read_i16, aircraft_name
+from dataclasses import dataclass
+from typing import Optional
+from f15se_helpers import aircraft_name
 from f15se_entities import (
-    ThreeD3Model,
     ThreeDTerrain,
     ThreeDGGrid,
     ThreeWld,
     DecodedModel, 
     WldObject,
-    WldUnit,
-    TerrainTile,
-    TileEntry,
-    FaceNormal,
     ModelVertex,
-    ModelEdge,
     ModelFace,
-    ModelWireLine
+    PathLike
 )
-
 from f15se_constant import (
-    _AIRCRAFT_TYPES, 
     _AIRCRAFT_MODEL_IDS,
-    TILE_OBJECT_SIZE,
-    MAX_TILE_DATA,
     _DEFAULT_PALETTE,
     _TILE_COLORS,
     _LOD_DIM,
+    _TILE_GRID_DIM,
+    _THEATER_GRIDS,
     WLD_MAX
+)
+from data_loader import (
+    load_3d3,
+    load_3dt,
+    load_3dg,
+    load_wld,
+    decode_3d3_models,
 )
 try:
     import pygame  # type: ignore
 except Exception:  # pragma: no cover - optional dependency
     pygame = None
-
-
-PathLike = Union[str, Path]
 
 
 def aircraft_model_id(plane_type: int) -> int:
@@ -47,273 +42,25 @@ def aircraft_model_id(plane_type: int) -> int:
         return _AIRCRAFT_MODEL_IDS[plane_type]
     return -1
 
-
-def load_3d3(path: PathLike) -> ThreeD3Model:
-    path = Path(path)
-    data = path.read_bytes()
-    if len(data) < 2:
-        raise ValueError("3D3 file is empty")
-
-    signature = _read_u16(data, 0)
-    if signature != 0x3333:
-        raise ValueError(f"Unexpected 3D3 signature 0x{signature:04x}")
-
-    offset = 2
-    header_count = _read_u16(data, offset)
-    offset += 2
-    header_words = [
-        _read_u16(data, offset + index * 2)
-        for index in range(header_count)
-    ]
-    offset += header_count * 2
-
-    object_size = _read_u16(data, offset)
-    offset += 2
-    object_data = _read_bytes(data, offset, object_size, name="object data")
-    offset += object_size
-
-    extra_section_count = _read_u8(data, offset)
-    offset += 1
-
-    extra_bytes_a = b""
-    extra_bytes_b = b""
-    extra_bytes_c = b""
-    vertex_x: list[int] = []
-    vertex_y: list[int] = []
-    vertex_z: list[int] = []
-    if extra_section_count != 0:
-        extra_bytes_a = _read_bytes(data, offset, extra_section_count, name="extra A")
-        offset += extra_section_count
-        extra_bytes_b = _read_bytes(data, offset, extra_section_count, name="extra B")
-        offset += extra_section_count
-        extra_bytes_c = _read_bytes(data, offset, extra_section_count, name="extra C")
-        offset += extra_section_count
-
-        vertex_x_count = _read_u8(data, offset)
-        offset += 1
-        if vertex_x_count != 0:
-            vertex_x = [
-                _read_u16(data, offset + index * 2)
-                for index in range(vertex_x_count)
-            ]
-            offset += vertex_x_count * 2
-
-        vertex_y_count = _read_u8(data, offset)
-        offset += 1
-        if vertex_y_count != 0:
-            vertex_y = [
-                _read_u16(data, offset + index * 2)
-                for index in range(vertex_y_count)
-            ]
-            offset += vertex_y_count * 2
-
-        vertex_z_count = _read_u8(data, offset)
-        offset += 1
-        if vertex_z_count != 0:
-            vertex_z = [
-                _read_u16(data, offset + index * 2)
-                for index in range(vertex_z_count)
-            ]
-
-    return ThreeD3Model(
-        path=path,
-        signature=signature,
-        header_words=header_words,
-        object_data=object_data,
-        extra_bytes_a=extra_bytes_a,
-        extra_bytes_b=extra_bytes_b,
-        extra_bytes_c=extra_bytes_c,
-        vertex_x=vertex_x,
-        vertex_y=vertex_y,
-        vertex_z=vertex_z,
-    )
-
-
-def load_3dt(path: PathLike) -> ThreeDTerrain:
-    path = Path(path)
-    data = path.read_bytes()
-    if len(data) < 2:
-        raise ValueError("3DT file is empty")
-
-    signature = _read_u16(data, 0)
-    if signature != 0x3131:
-        raise ValueError(f"Unexpected 3DT signature 0x{signature:04x}")
-
-    offset = 2
-    category_sizes = [_read_u16(data, offset + index * 2) for index in range(5)]
-    offset += 10
-
-    # First loop: read all tile count arrays (matrix3dt in C) before any tile data
-    tile_counts: list[list[int]] = []
-    for category_size in category_sizes:
-        if category_size > 32:
-            raise ValueError(f"Category size {category_size} exceeds 0x20")
-        counts = [_read_u16(data, offset + index * 2) for index in range(category_size)]
-        offset += category_size * 2
-        tile_counts.append(counts)
-
-    # Second loop: read actual tile object data
-    categories: list[list[TerrainTile]] = []
-    byte_offset = 0
-    for counts in tile_counts:
-        tiles: list[TerrainTile] = []
-        for object_count in counts:
-            if byte_offset + object_count * TILE_OBJECT_SIZE > MAX_TILE_DATA:
-                raise ValueError("Too much tile data")
-            objects: list[TileEntry] = []
-            for _ in range(object_count):
-                x = _read_i16(data, offset)
-                offset += 2
-                y = _read_i16(data, offset)
-                offset += 2
-                z = _read_i16(data, offset)
-                offset += 2
-                shape = _read_u16(data, offset)
-                offset += 2
-                objects.append(TileEntry(x=x, y=y, z=z, shape=shape & 0xFF))
-                byte_offset += TILE_OBJECT_SIZE
-            tiles.append(TerrainTile(object_count=object_count, objects=objects))
-        categories.append(tiles)
-    return ThreeDTerrain(
-        path=path,
-        signature=signature,
-        category_sizes=category_sizes,
-        tile_counts=tile_counts,
-        categories=categories,
-    )
-
-def load_3dg(path: PathLike) -> ThreeDGGrid:
-    path = Path(path)
-    data = path.read_bytes()
-    if len(data) < 2:
-        raise ValueError("3DG file is empty")
-
-    signature = _read_u16(data, 0)
-    if signature != 0x3232:
-        raise ValueError(f"Unexpected 3DG signature 0x{signature:04x}")
-
-    offset = 2
-    header = _read_bytes(data, offset, 0x10, name="header")
-    offset += 0x10
-    layer1 = _read_bytes(data, offset, 0x100, name="layer1")
-    offset += 0x100
-    layer2 = _read_bytes(data, offset, 0x200, name="layer2")
-    offset += 0x200
-    layer3 = _read_bytes(data, offset, 0x200, name="layer3")
-    offset += 0x200
-    layer4 = _read_bytes(data, offset, 0x200, name="layer4")
-
-    return ThreeDGGrid(
-        path=path,
-        signature=signature,
-        header=header,
-        layer1=layer1,
-        layer2=layer2,
-        layer3=layer3,
-        layer4=layer4,
-    )
-
-
-
-
-def load_wld(path: PathLike) -> ThreeWld:
-    """Load a theater .WLD file.
-
-    Binary layout (readWorldData in enworld.c):
-      u16  worldWaypointCount
-      u16  worldObjectCount
-      u16  worldRouteTable[0]
-      u16  worldRouteCount
-      worldObjectCount × 16-byte WorldObject
-      u16  worldSamCount
-      worldSamCount × 36-byte worldSamTable (SAM/AA units)
-      100  unitTypeTable
-      100  worldUnitFlags
-      750  worldStringBuf  (null-terminated names, indexed by unit_ref)
-      … (gridFlags, worldGridSize, etc. — not parsed)
-    """
-    path = Path(path)
-    data = path.read_bytes()
-    off = 0
-
-    def u16() -> int:
-        nonlocal off
-        v = int.from_bytes(data[off:off + 2], "little")
-        off += 2
-        return v
-
-    def i16() -> int:
-        nonlocal off
-        v = int.from_bytes(data[off:off + 2], "little", signed=True)
-        off += 2
-        return v
-
-    buf1 = u16()
-    obj_count = u16()
-    buf2 = u16()
-    buf3 = u16()
-
-    objects: list[WldObject] = []
-    for _ in range(obj_count):
-        if off + 16 > len(data):
-            break
-        objects.append(WldObject(
-            unit_ref=u16(), x=u16(), y=u16(),
-            unit_type=i16(), target_flags=i16(),
-            occupant_type=i16(), patrol_count=i16(),
-            object_idx=i16() & 0x7f,
-        ))
-
-    units: list[WldUnit] = []
-    if off + 2 <= len(data):
-        unit_count = u16()
-        for _ in range(unit_count):
-            if off + 36 > len(data):
-                break
-            wp  = i16(); x = u16(); y = u16(); alt = u16()
-            off += 8  # xPrecise(4) + yPrecise(4)
-            hdg = i16(); pitch = i16(); roll = i16()
-            pt  = i16(); flags = i16(); spd = i16(); fuel = u16()
-            off += 6  # reserved[6]
-            units.append(WldUnit(
-                waypoint_idx=wp, x=x, y=y, altitude=alt,
-                heading=hdg, pitch=pitch, roll=roll,
-                plane_type=pt, flags=flags, max_speed=spd, fuel=fuel,
-            ))
-
-    # Skip unitTypeTable (100) and worldUnitFlags (100)
-    if off + 200 <= len(data):
-        off += 200
-
-    # Parse worldStringBuf (750 bytes of null-terminated names).
-    names: list[str] = []
-    STRING_BUF_SIZE = 750
-    if off + STRING_BUF_SIZE <= len(data):
-        str_buf = data[off: off + STRING_BUF_SIZE]
-        pos = 0
-        while pos < STRING_BUF_SIZE and len(names) < 100:
-            end = str_buf.find(b'\x00', pos)
-            if end == -1:
-                end = STRING_BUF_SIZE
-            names.append(str_buf[pos:end].decode('latin-1', errors='replace').strip())
-            pos = end + 1
-
-    return ThreeWld(path=path, buf1=buf1, buf2=buf2, buf3=buf3,
-                    objects=objects, units=units, names=names)
-
-
-
 def process_3dg(grid: ThreeDGGrid, lod: int, col: int, row: int) -> int:
     """Return the tile-category index for grid cell (col, row) at the given LOD.
 
     The returned value is the tile index within the matching 3DT category
-    (category index == lod).  Out-of-bounds returns 0.
+    (category index == lod).  Out-of-bounds returns 0.  Mirrors eg3dgrid.c
+    process3dg(), including the LOD 4 top grid (g_topLodGrid) with its +2 offset.
     """
-    if lod < 0 or lod > 3:
+    if lod < 0 or lod > 4:
         return 0
+    if lod == 4:
+        # LOD 4 reads the 8×8 theater top grid with a +2 cell offset.
+        col += 2
+        row += 2
     dim = _LOD_DIM[lod]
     if col < 0 or row < 0 or col >= dim or row >= dim:
         return 0
+    if lod == 4:
+        idx = col + (row << 3)
+        return grid.top_grid[idx] if idx < len(grid.top_grid) else 0
     if lod == 3:
         # buf1_3dg is layer1: a flat 16×16 byte array
         idx = col + row * 16
@@ -329,208 +76,6 @@ def process_3dg(grid: ThreeDGGrid, lod: int, col: int, row: int) -> int:
     idx = (col & 3) + ((row & 3) << 2) + (parent << 4)
     return layer[idx] if idx < len(layer) else 0
 
-def _decode_model(
-    data: bytes,
-    base_offset: int,
-    index: int,
-    extra_a: bytes,
-    extra_b: bytes,
-    extra_c: bytes,
-    vertex_x: list[int],
-    vertex_y: list[int],
-    vertex_z: list[int],
-) -> DecodedModel:
-    """Decode one model stream from object_data.
-
-    Stream layout (mirrors eg3drast.c processSceneObject pipeline):
-      [render_mode:u8] [LOD headers: while byte&0x80: 3 bytes each]
-      [opcode/count:u8  bits 4..0=face_count, >0x10 => wide 4-byte masks]
-      [face_count × FaceNormal: nx,ny,nz,thr as i16]
-      [vtx_al:u8  bit7=indexed, bits6..0=count]
-        if indexed: count × (mask_size bytes + 1 byte ref → lookup tables)
-        else:        count × (mask_size bytes + i16 x, i16 y, i16 z)
-      [edge_count:u8] [edge_count × (mask_size + va:u8 + vb:u8)]
-      [prim_count:u8]  (0xFF = RLE, not decoded here)
-        face: opcode&3==1 → [count:u8] [count×edge_idx:u8] [color:u8]
-        line: else        → [mask_size bytes] [edge_idx:u8] [color:u8]
-    """
-    pos = base_offset
-
-    def u8() -> int:
-        nonlocal pos
-        if pos >= len(data):
-            raise ValueError("unexpected end of model data")
-        v = data[pos]; pos += 1
-        return v
-
-    def i16() -> int:
-        nonlocal pos
-        if pos + 2 > len(data):
-            raise ValueError("unexpected end of model data")
-        v = int.from_bytes(data[pos:pos + 2], "little", signed=True)
-        pos += 2
-        return v
-
-    def skip(n: int) -> None:
-        nonlocal pos
-        pos += n
-
-    skip(1)  # render-mode byte
-
-    # LOD headers: any byte with bit 7 set is a 3-byte record; skip them all
-    # to get the highest-detail (nearest) LOD data
-    while pos < len(data) and data[pos] & 0x80:
-        skip(3)
-
-    # opcode/count byte: low 5 bits = face visibility count
-    opcode_byte = u8()
-    face_count = opcode_byte & 0x1f
-    wide_vtx = face_count > 0x10
-    mask_size = 4 if wide_vtx else 2
-
-    # face visibility normals (fnx, fny, fnz, threshold) — 8 bytes each
-    normals: list[FaceNormal] = []
-    for _ in range(face_count):
-        normals.append(FaceNormal(i16(), i16(), i16(), i16()))
-
-    # vertex list
-    vertices: list[ModelVertex] = []
-    al = u8()
-    vtx_count = al & 0x7f
-    if al & 0x80:
-        # indexed mode: ref byte → extra_a/b/c → vertex_x/y/z tables
-        use_lookup = bool(extra_a and extra_b and extra_c
-                         and vertex_x and vertex_y and vertex_z)
-        for _ in range(vtx_count):
-            skip(mask_size)
-            ref = u8()
-            if use_lookup:
-                xa = extra_a[ref % len(extra_a)]
-                yb = extra_b[ref % len(extra_b)]
-                zc = extra_c[ref % len(extra_c)]
-                x = vertex_x[xa % len(vertex_x)]
-                y = vertex_y[yb % len(vertex_y)]
-                z = vertex_z[zc % len(vertex_z)]
-                # stored as uint16, reinterpret as signed
-                x = x if x < 0x8000 else x - 0x10000
-                y = y if y < 0x8000 else y - 0x10000
-                z = z if z < 0x8000 else z - 0x10000
-            else:
-                x = y = z = 0
-            vertices.append(ModelVertex(x, y, z))
-    elif vtx_count:
-        # inline mode: explicit i16 x, y, z per vertex
-        for _ in range(vtx_count):
-            skip(mask_size)
-            vertices.append(ModelVertex(i16(), i16(), i16()))
-
-    # edge list: va/vb are vertex slot indices
-    edges: list[ModelEdge] = []
-    edge_count = u8()
-    for _ in range(edge_count):
-        skip(mask_size)
-        edges.append(ModelEdge(u8(), u8()))
-
-    # primitive list
-    faces: list[ModelFace] = []
-    wire_lines: list[ModelWireLine] = []
-    prim_count = u8()
-
-    def _decode_prim_command(buf: bytes, p: int) -> int:
-        """Decode one primitive command from buf at offset p; return new p."""
-        if p >= len(buf):
-            return p
-        op = buf[p]; p += 1
-        if (op & 3) == 1:
-            # filled face: [count:u8] [count × edge_idx:u8] [color:u8]
-            # bits [6:2] of opcode = face normal index used for back-face
-            # culling.  If this index >= face_count the corresponding bit in
-            # g_vtxSignMask was never cleared, so the face is always visible.
-            normal_idx = (op & 0x7c) >> 2
-            if p >= len(buf):
-                return p
-            n = buf[p]; p += 1
-            if p + n + 1 > len(buf):
-                return len(buf)
-            ei = list(buf[p:p + n]); p += n
-            faces.append(ModelFace(edge_indices=ei, color=buf[p], normal_index=normal_idx)); p += 1
-        else:
-            # wireframe line: [mask_size bytes] [edge_idx:u8] [color:u8]
-            p += mask_size
-            if p + 2 > len(buf):
-                return len(buf)
-            wire_lines.append(ModelWireLine(edge_index=buf[p], color=buf[p + 1]))
-            p += 2
-        return p
-
-    if prim_count == 0xFF:
-        # RLE-reordered shared-edge path.
-        # Layout after the 0xFF byte (p already advanced past it):
-        #   [root: 1 byte]                      RLE tree root node index
-        #   [tree: face_count*2 bytes]          left/right child per node (0xFF=null)
-        #   [coord: face_count*2 bytes]         int16 offsets from dataBase per group
-        #   [cnts:  face_count bytes]           u8 run-count per group
-        #   [dataBase: ...]                     packed primitive commands
-        skip(1 + face_count * 2)              # root + adjacency tree
-        coord_offs: list[int] = []
-        for _ in range(face_count):
-            if pos + 2 > len(data):
-                break
-            lo, hi = data[pos], data[pos + 1]; pos += 2
-            off = lo | (hi << 8)
-            if off >= 0x8000:
-                off -= 0x10000
-            coord_offs.append(off)
-        run_cnts = [u8() for _ in range(face_count)]
-        data_base = pos
-        for i in range(len(coord_offs)):
-            run_p = data_base + coord_offs[i]
-            for _ in range(run_cnts[i] if i < len(run_cnts) else 0):
-                run_p = _decode_prim_command(data, run_p)
-    elif prim_count != 0:
-        # Direct list: prim_count consecutive primitive commands.
-        for _ in range(prim_count):
-            pos = _decode_prim_command(data, pos)
-
-    return DecodedModel(
-        index=index, offset=base_offset,
-        face_normals=normals, vertices=vertices,
-        edges=edges, faces=faces, wire_lines=wire_lines,
-    )
-
-
-def decode_3d3_models(model: ThreeD3Model) -> list[DecodedModel]:
-    """Decode all models indexed by header_words in a ThreeD3Model's object_data.
-
-    header_words[i] is the byte offset of model i inside object_data.
-    """
-    data = model.object_data
-    results = []
-    for i, offset in enumerate(model.header_words):
-        if offset >= len(data):
-            continue
-        try:
-            results.append(_decode_model(
-                data, offset, index=i,
-                extra_a=model.extra_bytes_a,
-                extra_b=model.extra_bytes_b,
-                extra_c=model.extra_bytes_c,
-                vertex_x=model.vertex_x,
-                vertex_y=model.vertex_y,
-                vertex_z=model.vertex_z,
-            ))
-        except (IndexError, ValueError):
-            pass
-    return results
-
-def load_scene(model_path: PathLike, terrain_path: PathLike, grid_path: PathLike) -> dict[str, object]:
-    return {
-        "model": load_3d3(model_path),
-        "terrain": load_3dt(terrain_path),
-        "grid": load_3dg(grid_path),
-    }
-
-
 def _build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Inspect F-15 Strike Eagle 2 3D asset files")
     parser.add_argument("--model", help="Path to terrain .3D3 file (CE.3D3 etc.)")
@@ -542,6 +87,8 @@ def _build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--decode", action="store_true",
                     help="Decode and print model streams from a .3D3 file")
     parser.add_argument("--wld", help="Path to a theater .WLD file (overlaid on world map)")
+    parser.add_argument("--theater", type=int, default=0,
+                        help="Theater index 0-7 selecting the LOD-4 top grid (default 0)")
 
     return parser
 
@@ -567,40 +114,68 @@ def _render_grid_surface(grid: ThreeDGGrid, width: int = 320, height: int = 240)
     return surface
 
 
+def _render_model_faces(
+    surface,
+    mdl: "DecodedModel",
+    project_vertex,
+    palette: list[tuple[int, int, int]] = _DEFAULT_PALETTE,
+    is_back_facing=None,
+    outline: bool = True,
+) -> None:
+    """Render a decoded model's filled faces (painter's algorithm).
 
-def _compute_tile_bg_colors(
-    terrain: ThreeDTerrain,
-    lod: int,
-    models_by_shape: dict[int, "DecodedModel"],
-) -> dict[int, tuple[int, int, int]]:
-    """For each tile_idx, find the dominant face color across all its models.
+    This is the single shared model renderer used by every viewer: the
+    standalone --model viewer, the 3D world map and the 2D top-down map.
+    The only thing that differs between call sites is how a vertex is mapped
+    to the screen, supplied via ``project_vertex``:
 
-    The color is slightly darkened so it reads as a background (the actual 3D
-    models will be drawn on top at full brightness).
+        project_vertex(i) -> (screen_point | None, depth)
+
+    where ``depth`` is the painter-sort key (larger == drawn first / farther).
+    Faces are filled with ``palette[face.color]`` and outlined with a slightly
+    darker shade, exactly like the original model viewer.
     """
-    result: dict[int, tuple[int, int, int]] = {}
-    if lod >= len(terrain.categories):
-        return result
-    cat = terrain.categories[lod]
-    for tile_idx, tile in enumerate(cat):
-        counts: dict[int, int] = {}
-        for obj in tile.objects:
-            mdl = models_by_shape.get(obj.shape)
-            if mdl:
-                for face in mdl.faces:
-                    ci = face.color % len(_DEFAULT_PALETTE)
-                    counts[ci] = counts.get(ci, 0) + 1
-        if counts:
-            # Exclude index 0 (black) unless it's the only one
-            non_black = {k: v for k, v in counts.items() if k != 0}
-            best = max(non_black or counts, key=lambda k: (non_black or counts)[k])
-            r, g, b = _DEFAULT_PALETTE[best]
-            # Darken: use as background behind the 3D models
-            result[tile_idx] = (max(0, r - 60), max(0, g - 60), max(0, b - 60))
-    return result
+    import math
 
+    n = len(mdl.vertices)
+    proj: list[tuple[int, int] | None] = [None] * n
+    depth: list[float] = [0.0] * n
+    for i in range(n):
+        r = project_vertex(i)
+        if r is not None and r[0] is not None:
+            proj[i] = r[0]
+            depth[i] = r[1]
 
+    face_list: list[tuple[float, list[tuple[int, int]], tuple[int, int, int]]] = []
+    for face in mdl.faces:
+        if is_back_facing is not None and is_back_facing(face):
+            continue
+        seen: set[int] = set()
+        poly_vi: list[int] = []
+        for ei in face.edge_indices:
+            if ei >= len(mdl.edges):
+                continue
+            e = mdl.edges[ei]
+            for vi in (e.va, e.vb):
+                if vi not in seen and vi < n:
+                    seen.add(vi)
+                    poly_vi.append(vi)
+        valid_vi = [vi for vi in poly_vi if proj[vi] is not None]
+        if len(valid_vi) < 3:
+            continue
+        pts = [proj[vi] for vi in valid_vi]
+        cx = sum(p[0] for p in pts) / len(pts)
+        cy = sum(p[1] for p in pts) / len(pts)
+        pts.sort(key=lambda p: math.atan2(p[1] - cy, p[0] - cx))
+        avg_z = sum(depth[vi] for vi in valid_vi) / len(valid_vi)
+        face_list.append((avg_z, pts, palette[face.color % len(palette)]))
 
+    face_list.sort(key=lambda t: t[0], reverse=True)
+    for _, pts, color in face_list:
+        pygame.draw.polygon(surface, color, pts)
+        if outline:
+            dark = (max(0, color[0] - 50), max(0, color[1] - 50), max(0, color[2] - 50))
+            pygame.draw.polygon(surface, dark, pts, 1)
 
 
 def _show_world_viewer(
@@ -769,106 +344,62 @@ def _show_world_viewer(
             scale: float = MODEL_SCALE,
         ) -> None:
             """Project and draw a decoded model at world position (owx, owy, owz)."""
-            verts_cam: list[tuple[float, float, float]] = []
-            verts_proj: list[tuple[int, int] | None] = []
-            for v in mdl.vertices:
+            def _pv(i: int):
+                v = mdl.vertices[i]
                 wx = owx + v.x * scale
                 wy = owy + v.z * scale + y_floor
                 wz = owz + v.y * scale
                 cc = _to_cam(wx, wy, wz, *basis)
-                verts_cam.append(cc)
-                verts_proj.append(_proj(*cc))
+                # camera-space z is the painter depth (larger == farther)
+                return (_proj(*cc), cc[2])
 
-            face_list: list[tuple[float, list[tuple[int, int]], tuple[int, int, int]]] = []
-            for face in mdl.faces:
-                seen_vi: set[int] = set()
-                poly_vi: list[int] = []
-                for ei in face.edge_indices:
-                    if ei >= len(mdl.edges):
+            _render_model_faces(surface, mdl, _pv, _DEFAULT_PALETTE)
+
+        # The map is drawn as several LOD passes, coarse → fine, exactly like
+        # drawMapTiles(): LOD 4 (8×8 theater grid) is the always-present map
+        # background, then LOD 3 / LOD 2 add coastline and inland detail on top.
+        def _draw_tile_pass_3d(pass_lod: int) -> None:
+            if pass_lod >= len(terrain.categories):
+                return
+            cat = terrain.categories[pass_lod]
+            tdim = _TILE_GRID_DIM[pass_lod]
+            tworld = (_LOD_DIM[lod] * CELL_SIZE) / tdim
+            tscale = tworld / 0x1000
+            radius2 = (VIEW_DIST_CELLS * CELL_SIZE) ** 2
+            cells: list[tuple[float, int, int]] = []
+            for row in range(tdim):
+                for col in range(tdim):
+                    ccx = (col + 0.5) * tworld - cam_x
+                    ccz = (row + 0.5) * tworld - cam_z
+                    d2 = ccx * ccx + ccz * ccz
+                    if d2 > radius2:
                         continue
-                    e = mdl.edges[ei]
-                    for vi in (e.va, e.vb):
-                        if vi not in seen_vi and vi < len(verts_cam):
-                            seen_vi.add(vi)
-                            poly_vi.append(vi)
-                valid_vi = [vi for vi in poly_vi if verts_proj[vi] is not None]
-                if len(valid_vi) < 3:
+                    cells.append((d2, col, row))
+            cells.sort(reverse=True)
+            for _, col, row in cells:
+                tile_idx = process_3dg(grid, pass_lod, col, row)
+                if tile_idx >= len(cat):
                     continue
-                pts_s = [verts_proj[vi] for vi in valid_vi]  # type: ignore[misc]
-                cx_ = sum(p[0] for p in pts_s) / len(pts_s)  # type: ignore[index]
-                cy_ = sum(p[1] for p in pts_s) / len(pts_s)  # type: ignore[index]
-                pts_s.sort(key=lambda p: math.atan2(p[1] - cy_, p[0] - cx_))  # type: ignore[index]
-                avg_z = sum(verts_cam[vi][2] for vi in valid_vi) / len(valid_vi)
-                color = _DEFAULT_PALETTE[face.color % len(_DEFAULT_PALETTE)]
-                face_list.append((avg_z, pts_s, color))  # type: ignore[arg-type]
+                # Tile center anchor — matches drawMapTiles() (+ tileSize >> 1).
+                cx = (col + 0.5) * tworld
+                cz = (row + 0.5) * tworld
+                for obj in cat[tile_idx].objects:
+                    if obj.z != 0:
+                        continue
+                    owx = cx + obj.x * tscale
+                    owz = cz + obj.y * tscale
+                    mdl = models_by_shape.get(obj.shape)
+                    if mdl and mdl.vertices:
+                        _draw_mdl_at(mdl, owx, 0.0, owz, y_floor=0.0, scale=tscale)
+                    else:
+                        p = _proj(*_to_cam(owx, 0.0, owz, *basis))
+                        if p:
+                            c = (255, 220, 60) if obj.shape < 8 else (255, 130, 60)
+                            pygame.draw.circle(surface, c, p, 3)
 
-            face_list.sort(reverse=True)
-            for _, pts_s, color in face_list:
-                pygame.draw.polygon(surface, color, pts_s)
-
-            for edge in mdl.edges:
-                pa = verts_proj[edge.va] if edge.va < len(verts_proj) else None
-                pb = verts_proj[edge.vb] if edge.vb < len(verts_proj) else None
-                if pa and pb:
-                    pygame.draw.line(surface, (0, 0, 0), pa, pb)
-
-        # Collect cells sorted far-to-near (painter's algorithm).
-        cells: list[tuple[float, int, int]] = []
-        for row in range(dim):
-            for col in range(dim):
-                ccx = (col + 0.5) * CELL_SIZE - cam_x
-                ccz = (row + 0.5) * CELL_SIZE - cam_z
-                dist2 = ccx * ccx + ccz * ccz
-                if dist2 > (VIEW_DIST_CELLS * CELL_SIZE) ** 2:
-                    continue
-                cells.append((dist2, col, row))
-        cells.sort(reverse=True)
-
-        for _, col, row in cells:
-            tile_idx = process_3dg(grid, lod, col, row)
-            bg = (_TILE_COLORS[min(tile_idx, len(_TILE_COLORS) - 1)])
-
-            x0 = col * CELL_SIZE;       x1 = (col + 1) * CELL_SIZE
-            z0 = row * CELL_SIZE;       z1 = (row + 1) * CELL_SIZE
-
-            # Project the 4 ground-level corners.
-            corners = [
-                _to_cam(x0, 0, z0, *basis), _to_cam(x1, 0, z0, *basis),
-                _to_cam(x1, 0, z1, *basis), _to_cam(x0, 0, z1, *basis),
-            ]
-            pts = [_proj(*c) for c in corners]
-            valid = [p for p in pts if p is not None]
-
-            if len(valid) >= 3:
-                pygame.draw.polygon(surface, bg, valid)
-                for i in range(len(valid)):
-                    pygame.draw.line(
-                        surface, (0, 0, 0), valid[i], valid[(i + 1) % len(valid)], 1
-                    )
-
-            # Draw tile objects.
-            if lod < len(terrain.categories):
-                cat = terrain.categories[lod]
-                if tile_idx < len(cat):
-                    for obj in cat[tile_idx].objects:
-                        # World position of the tile object.
-                        # obj.x = east-west, obj.y = north-south, obj.z = altitude
-                        # (same axes as projectModelVertices / drawNearestTileObject)
-                        owx = col * CELL_SIZE + obj.x * MODEL_SCALE
-                        owz = row * CELL_SIZE + obj.y * MODEL_SCALE
-                        owy = obj.z * MODEL_SCALE
-
-                        mdl = models_by_shape.get(obj.shape)
-                        if mdl and mdl.vertices:
-                            yf = mdl_info[obj.shape].y_floor
-                            _draw_mdl_at(mdl, owx, owy, owz, y_floor=yf, scale=MODEL_SCALE)
-                        else:
-                            cc = _to_cam(owx, owy, owz, *basis)
-                            p = _proj(*cc)
-                            if p:
-                                c = (255, 220, 60) if obj.shape < 8 else (255, 130, 60)
-                                pygame.draw.circle(surface, c, p, 3)
-
+        for pass_lod in (4, 3, 2, 1, 0):
+            if pass_lod >= lod:
+                _draw_tile_pass_3d(pass_lod)
         # WLD objects — render CE.3D3 model (via object_idx) or marker post.
         MARKER_H = CELL_SIZE * 0.15  # marker height in world units
         if wld is not None:
@@ -963,35 +494,43 @@ def _show_world_viewer(
         surface.fill((10, 20, 40))
         half_map = dim * cell_px / 2
 
-        for row in range(dim):
-            sy = row * cell_px - half_map - pan_y + H / 2
-            if sy + cell_px < 0 or sy > H:
-                continue
-            for col in range(dim):
-                sx = col * cell_px - half_map - pan_x + W / 2
-                if sx + cell_px < 0 or sx > W:
+        # Same coarse→fine LOD passes as the 3D view (LOD 4 background first).
+        def _draw_tile_pass_2d(pass_lod: int) -> None:
+            if pass_lod >= len(terrain.categories):
+                return
+            cat = terrain.categories[pass_lod]
+            tdim = _TILE_GRID_DIM[pass_lod]
+            tile_px = (dim * cell_px) / tdim
+            tunits = tile_px / 0x1000
+            for row in range(tdim):
+                sy = row * tile_px - half_map - pan_y + H / 2
+                if sy + tile_px < 0 or sy > H:
                     continue
-                tile_idx = process_3dg(grid, lod, col, row)
-                color = (_TILE_COLORS[min(tile_idx, len(_TILE_COLORS) - 1)])
-                r = pygame.Rect(int(sx), int(sy),
-                                max(1, int(cell_px) - 1), max(1, int(cell_px) - 1))
-                pygame.draw.rect(surface, color, r)
+                for col in range(tdim):
+                    sx = col * tile_px - half_map - pan_x + W / 2
+                    if sx + tile_px < 0 or sx > W:
+                        continue
+                    tile_idx = process_3dg(grid, pass_lod, col, row)
+                    if tile_idx >= len(cat):
+                        continue
+                    cxp = sx + tile_px / 2
+                    cyp = sy + tile_px / 2
+                    for obj in cat[tile_idx].objects:
+                        if obj.z != 0:
+                            continue
+                        ox = cxp + obj.x * tunits
+                        oy = cyp + obj.y * tunits
+                        mdl = models_by_shape.get(obj.shape)
+                        if mdl is not None and mdl.vertices:
+                            _draw_model_topdown_2d(mdl, ox, oy, tile_px)
+                        else:
+                            dot_r = max(1, int(tile_px / 8))
+                            dot_c = (255, 220, 60) if obj.shape < 8 else (255, 130, 60)
+                            pygame.draw.circle(surface, dot_c, (int(ox), int(oy)), dot_r)
 
-                if cell_px >= 4 and lod < len(terrain.categories):
-                    cat = terrain.categories[lod]
-                    if tile_idx < len(cat):
-                        for obj in cat[tile_idx].objects:
-                            if obj.z != 0:
-                                continue
-                            ox = sx + cell_px / 2 + obj.x * cell_px / 0x1000
-                            oy = sy + cell_px / 2 + obj.y * cell_px / 0x1000
-                            mdl = models_by_shape.get(obj.shape)
-                            if mdl is not None and cell_px >= 16:
-                                _draw_model_topdown_2d(mdl, ox, oy, cell_px)
-                            else:
-                                dot_r = max(1, int(cell_px / 8))
-                                dot_c = (255, 220, 60) if obj.shape < 8 else (255, 130, 60)
-                                pygame.draw.circle(surface, dot_c, (int(ox), int(oy)), dot_r)
+        for pass_lod in (4, 3, 2, 1, 0):
+            if pass_lod >= lod:
+                _draw_tile_pass_2d(pass_lod)
 
         if wld is not None:
             half_map2 = dim * cell_px / 2
@@ -1064,50 +603,19 @@ def _show_world_viewer(
 
     def _draw_model_topdown_2d(m: DecodedModel, cx: float, cy: float, csz: float) -> None:
         """Draw model top-down (bird's eye): model.x → screen X, model.y → screen Y.
-        model.z (altitude) is used only for painter's sort (higher = drawn on top).
+        model.z (altitude) is the painter depth (higher altitude drawn on top).
         Scale: same ratio as MODEL_SCALE — csz/0x1000 pixels per game unit."""
         verts = m.vertices
         if not verts:
             return
         scale = csz / 0x1000  # game units → pixels (same as MODEL_SCALE in 3D)
 
-        # ── Filled faces, sorted by avg altitude (low altitude first) ─────────
         if m.faces:
-            face_list: list[tuple[float, list[tuple[int, int]], tuple[int, int, int]]] = []
-            for face in m.faces:
-                seen_vi: set[int] = set()
-                poly_vi: list[int] = []
-                for ei in face.edge_indices:
-                    if ei >= len(m.edges):
-                        continue
-                    e = m.edges[ei]
-                    for vi in (e.va, e.vb):
-                        if vi not in seen_vi and vi < len(verts):
-                            seen_vi.add(vi)
-                            poly_vi.append(vi)
-                if len(poly_vi) < 3:
-                    continue
-                pts = [(int(cx + verts[vi].x * scale), int(cy + verts[vi].y * scale))
-                       for vi in poly_vi]
-                # Sort by polar angle so the polygon winds correctly
-                cxp = sum(p[0] for p in pts) / len(pts)
-                cyp = sum(p[1] for p in pts) / len(pts)
-                pts.sort(key=lambda p: math.atan2(p[1] - cyp, p[0] - cxp))
-                avg_alt = sum(verts[vi].z for vi in poly_vi) / len(poly_vi)
-                pal = _DEFAULT_PALETTE
-                color = pal[face.color % len(pal)]
-                face_list.append((avg_alt, pts, color))
-            face_list.sort()  # low altitude first (high altitude drawn on top)
-            for _, pts, color in face_list:
-                pygame.draw.polygon(surface, color, pts)
-            # Edge outlines
-            for edge in m.edges:
-                va = verts[edge.va]; vb = verts[edge.vb]
-                pygame.draw.line(
-                    surface, (0, 0, 0),
-                    (int(cx + va.x * scale), int(cy + va.y * scale)),
-                    (int(cx + vb.x * scale), int(cy + vb.y * scale)),
-                )
+            def _pv(i: int):
+                v = verts[i]
+                # negate altitude so lower faces are drawn first (higher on top)
+                return ((int(cx + v.x * scale), int(cy + v.y * scale)), -v.z)
+            _render_model_faces(surface, m, _pv, _DEFAULT_PALETTE)
         else:
             # Fallback: wire edges
             for edge in m.edges:
@@ -1303,49 +811,14 @@ def _show_model_viewer(
             nz_rot = -fn.nx * sa + fn.nz * ca
             return nz_rot <= 0
 
-        draw_faces: list[tuple[float, list[tuple[int, int]], int]] = []
-        for face in m.faces:
-            if cull_back and _is_back_facing(face):
-                continue
-            pts3: list[tuple[float, float, float]] = []
-            seen_vi: set[int] = set()
-            for ei in face.edge_indices:
-                if ei < len(m.edges):
-                    e = m.edges[ei]
-                    for vi in (e.va, e.vb):
-                        if vi not in seen_vi and vi < len(centered):
-                            seen_vi.add(vi)
-                            pts3.append(centered[vi])
-            if len(pts3) < 3:
-                continue
-            spts = [_proj(p[0], p[1], p[2], cx, cy, scale) for p in pts3]
-            # Sort projected vertices by polar angle around their centroid so
-            # that pygame.draw.polygon receives them in a consistent winding
-            # order.  The scan-line rasterizer in the C code accepts edges in
-            # any order, but pygame requires a non-self-intersecting polygon.
-            # Angle-sort is equivalent to convex-hull order, which matches the
-            # game's convex polygon geometry.
-            scx = sum(p[0] for p in spts) / len(spts)
-            scy = sum(p[1] for p in spts) / len(spts)
-            spts.sort(key=lambda p: math.atan2(p[1] - scy, p[0] - scx))
-            avg_z = sum(p[2] for p in pts3) / len(pts3)
-            draw_faces.append((avg_z, spts, face.color))
-
-        # Painter's algorithm: draw farthest faces first.
-        draw_faces.sort(key=lambda t: t[0], reverse=True)
-
         if show_filled:
-            for _, spts, color_idx in draw_faces:
-                base = pal[color_idx & 0xFF]
-                if len(spts) >= 3:
-                    pygame.draw.polygon(surface, base, spts)
-                    # Thin dark outline for silhouette.
-                    outline = (
-                        max(0, base[0] - 50),
-                        max(0, base[1] - 50),
-                        max(0, base[2] - 50),
-                    )
-                    pygame.draw.polygon(surface, outline, spts, 1)
+            def _pv(i: int):
+                p = centered[i]
+                return (_proj(p[0], p[1], p[2], cx, cy, scale), p[2])
+            _render_model_faces(
+                surface, m, _pv, pal,
+                is_back_facing=(_is_back_facing if cull_back else None),
+            )
 
         if show_wires or not show_filled:
             wire_color = (0, 200, 80) if not show_filled else (0, 100, 40)
@@ -1454,7 +927,10 @@ def main() -> None:
             mdls = decode_3d3_models(load_3d3(args.model)) if args.model else None
             flt_mdls = decode_3d3_models(load_3d3(args.flt_model)) if args.flt_model else None
             photo_mdls = decode_3d3_models(load_3d3(args.photo_model)) if args.photo_model else None
-            _show_world_viewer(load_3dt(args.terrain), load_3dg(args.grid), wld, mdls, flt_mdls, photo_mdls)
+            grid = load_3dg(args.grid)
+            # Populate the LOD-4 top grid from the theater table (not in the 3DG file).
+            grid.top_grid = bytes(_THEATER_GRIDS[args.theater & 7])
+            _show_world_viewer(load_3dt(args.terrain), grid, wld, mdls, flt_mdls, photo_mdls)
         elif args.model:
             # 3D model viewer
             _show_model_viewer(decode_3d3_models(load_3d3(args.model)))

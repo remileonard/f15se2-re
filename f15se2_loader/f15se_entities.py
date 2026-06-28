@@ -1,9 +1,11 @@
+from typing import Optional, Union
 from dataclasses import dataclass, field
 from pathlib import Path
 from f15se_helpers import _is_printable, aircraft_name
 from f15se_constant import (
     _UNIT_TYPE_LABELS
 )
+PathLike = Union[str, Path]
 
 @dataclass
 class TileEntry:
@@ -115,6 +117,9 @@ class ThreeDGGrid:
     layer2: bytes = b""
     layer3: bytes = b""
     layer4: bytes = b""
+    # 8×8 top-LOD (LOD 4) grid, not stored in the 3DG file but copied from the
+    # theater table g_theaterGrids; populated by the viewer before rendering.
+    top_grid: bytes = b""
 
     def summary(self) -> dict[str, object]:
         return {
